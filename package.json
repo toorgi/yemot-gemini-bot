@@ -1,18 +1,18 @@
 {
-  "name": "ai_phone_line_gemini_audio_generic_with_content_filter",
+  "name": "generic-ai-phone-line",
   "version": "1.0.0",
-  "main": "index.js",
+  "type": "module",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
     "express": "^5.2.1",
-    "yemot-api": "^3.2.0",
-    "yemot-router2": "^6.2.3"
+    "yemot-router2": "^6.2.3",
+    "@google/generative-ai": "^0.24.1",
+    "yemot-api": "^3.2.0"
   }
 }
