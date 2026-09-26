@@ -1,0 +1,52 @@
+name: Bug report
+description: Create a report to help us improve
+labels:
+    - bug
+body:
+    - type: textarea
+      id: bug_description
+      attributes:
+          label: Describe the bug
+          description: A clear and concise description of what the bug is.
+      validations:
+          required: true
+    - type: textarea
+      id: version_information
+      attributes:
+          label: Version Information
+          description: |
+              Please provide the version of the package you are using.
+              Use the following command to get this:
+              ```bash
+              node -v && npm list yemot-router2 express
+              ```
+          render:
+              rows: 4
+      validations:
+          required: true
+    - type: textarea
+      id: reproducible_example
+      attributes:
+          label: Reproducible Example
+          description: A short, isolated, but runnable code example is required. **Otherwise, the issue will be closed**.
+          value: |
+              ```
+              // Add your code here...
+
+
+
+
+
+
+              ```
+          render:
+              rows: 30
+      validations:
+          required: true
+    - type: textarea
+      id: additional_context
+      attributes:
+          label: Additional Context
+          description: Provide any other context about the problem, like error messages, stack traces, or screenshots. you can also drop a file here.
+      validations:
+          required: false
