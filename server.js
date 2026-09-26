@@ -19,7 +19,8 @@ if (!apiKeys.length) {
 const MODEL_NAMES = (process.env.GEMINI_MODELS || 'gemini-3.5-flash-lite,gemini-3.5-flash')
   .split(',').map(x => x.trim()).filter(Boolean);
 
-const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS || 30000); // הוארך כדי לאפשר כתיבת קוד ארוך
+// זמן המתנה הוארך כדי לאפשר למודל לכתוב אתרים ענקיים
+const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS || 40000); 
 
 const GEMINI_FAILURE_COOLDOWN_MS = Number(process.env.GEMINI_FAILURE_COOLDOWN_MS || 30000);
 const geminiCooldownUntil = new Map();
@@ -41,9 +42,7 @@ function markGeminiTargetFailure(modelIndex, keyIndex, error) {
 
 const CONTENT_FILTER_INSTRUCTION = `כלל סינון תוכן מחייב: אין לספק, לעודד או לפרט תוכן שאינו תואם ערכי צניעות וחינוך.
 
-יש להימנע מתוכן מיני או אירוטי, תיאורים מיניים, פורנוגרפיה, עירום מיני, פנטזיות מיניות ותוכן שמטרתו גירוי מיני. יש להימנע גם מאלימות גרפית, סמים, הימורים, פגיעה עצמית ותקיפה.
-
-אם התוכן האסור הוא רק חלק שולי מהשאלה, יש להשמיט את החלק האסור ולענות רק על החלק המותר. אם הנושא האסור הוא מרכז השאלה או שהתשובה דורשת פירוט אסור, אין לענות על התוכן האסור ויש להחזיר בדיוק את הודעת הסינון הבאה:
+פירוט אסור, אין לענות על התוכן האסור ויש להחזיר בדיוק את הודעת הסינון הבאה:
 "היי עצור הקו מסונן ולא ניתן לדבר איתו על תוכן שאינו מתאים לערכי הצניעות והחינוך"`;
 
 const conversationLog = [];
@@ -53,7 +52,7 @@ const projectsList = [];
 const systemLogs = [];
 
 const appSettings = {
-  firstCallMessage: process.env.FIRST_CALL_MESSAGE || 'שלום איך אפשר לעזור לך היום אמור בבקשה על מה תרצה לדבר אחרי הצפצוף ולסיום ההקלטה הקש סולמית',
+  firstCallMessage: process.env.FIRST_CALL_MESSAGE || 'שלום איך אפשר לעזור לך היום ? ולסיום ההקלטה הקש סולמית',
   systemInstruction: process.env.AI_SYSTEM_INSTRUCTION || ''
 };
 
@@ -244,20 +243,35 @@ function logDetailedError(context, err) {
   addSystemLog(`[${context}] ${err?.message || err}`, 'error');
 }
 
+
+// ============== פיצול המודלים לפתרון בעיות ה-JSON והחיפוש ==============
 const genAIClients = apiKeys.map(key => new GoogleGenerativeAI(key));
-const geminiGenerationConfig = { thinkingConfig: { thinkingLevel: 'minimal' }, responseMimeType: 'application/json' };
-const modelsByName = MODEL_NAMES.map(name => genAIClients.map(ai => ai.getGenerativeModel({model:name, generationConfig: geminiGenerationConfig})));
-const webModelsByName = MODEL_NAMES.map(name => genAIClients.map(ai => ai.getGenerativeModel({model:name, tools:[{googleSearch:{}}], generationConfig: geminiGenerationConfig})));
+
+// 1. הגדרת מודל לפיענוח (חייב להחזיר JSON מסודר)
+const jsonConfig = { thinkingConfig: { thinkingLevel: 'minimal' }, responseMimeType: 'application/json' };
+const modelsJson = MODEL_NAMES.map(name => genAIClients.map(ai => ai.getGenerativeModel({model:name, generationConfig: jsonConfig})));
+
+// 2. הגדרת מודל ליצירת קוד מלא וטקסט ארוך (חופשי, ללא כבלי JSON)
+const textConfig = { thinkingConfig: { thinkingLevel: 'minimal' } };
+const modelsText = MODEL_NAMES.map(name => genAIClients.map(ai => ai.getGenerativeModel({model:name, generationConfig: textConfig})));
+
+// 3. הגדרת מודל ייעודי לחיפוש באינטרנט
+const modelsWeb = MODEL_NAMES.map(name => genAIClients.map(ai => ai.getGenerativeModel({model:name, tools:[{googleSearch:{}}], generationConfig: textConfig})));
+
 
 function getExclusiveInstruction() {
   return [CONTENT_FILTER_INSTRUCTION, appSettings.systemInstruction].filter(Boolean).join('\n\n');
 }
 
-async function generateWithRetry(contents, useWebSearch=false) {
-  if (!genAIClients.length || !modelsByName.length || !modelsByName[0]?.length)
+// פונקציית העבודה החכמה - בוחרת את המודל הנכון לפי המשימה
+async function generateWithRetry(contents, mode = 'json') {
+  if (!genAIClients.length || !modelsJson.length || !modelsJson[0]?.length)
     throw Object.assign(new Error('Gemini is not configured'), {status:400});
 
-  const groups = useWebSearch ? webModelsByName : modelsByName;
+  let groups = modelsJson;
+  if (mode === 'text') groups = modelsText;
+  if (mode === 'web') groups = modelsWeb;
+
   const deadline = Date.now() + REQUEST_TIMEOUT_MS;
   let lastError;
 
@@ -293,23 +307,24 @@ function audioParts(audioBase64) {
   return [{inlineData:{mimeType:process.env.YEMOT_AUDIO_MIME_TYPE || 'audio/wav', data:audioBase64}}];
 }
 
-// שלב 1: האזנה ופענוח Intent
+// שלב 1: האזנה ופענוח ה-Intent של המתקשר (באמצעות JSON טהור ומהיר)
 async function processAudioTurn(audioBase64) {
   const prompt = `${getExclusiveInstruction()}
 זו הקלטה של שאלה או בקשה מהמתקשר. עבד את ההקלטה פעם אחת והחזר JSON בלבד במבנה הבא:
 {
   "transcript": "תמלול מדויק בעברית של מה שהמתקשר אמר",
-  "answer": "תשובה קצרה וברורה להקראה קולית. אם המשתמש ביקש לבנות משהו או לחפש משהו באינטרנט, אל תענה על השאלה כאן אלא פשוט תגיד משהו כמו: 'אני עובד על זה, כמה שניות...'",
+  "answer": "תשובה קצרה וברורה להקראה קולית. אם המשתמש ביקש לבנות משהו או לחפש משהו באינטרנט, אל תענה על השאלה כאן אלא פשוט תגיד משהו כמו: 'כמה שניות, אני מכין את זה...'",
   "needsWebSearch": false,
   "wantsProject": false
 }
 
 כללים:
-1. needsWebSearch: true אם חובה לחפש באינטרנט (חדשות, נתונים, או בקשה מפורשת לחיפוש רשת).
-2. wantsProject: true אם המשתמש מבקש לבנות קוד, אתר, מערכת, או לנסח מאמר ארוך/תוכן מורכב לשמירה.
+1. needsWebSearch: true אם חובה לחפש באינטרנט (חדשות, נתונים עדכניים, או בקשה מפורשת לחיפוש רשת).
+2. wantsProject: true אם המשתמש מבקש לבנות קוד, אתר, מערכת, או לנסח טקסט/מאמר ארוך במיוחד שצריך להישמר.
 - אל תכניס JSON בתוך markdown.`;
 
-  const result = await generateWithRetry([...audioParts(audioBase64), {text:prompt}]);
+  // משתמשים במודל ה-JSON לזיהוי מהיר
+  const result = await generateWithRetry([...audioParts(audioBase64), {text:prompt}], 'json');
   const raw = result.response.text().trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   try {
     const parsed = JSON.parse(raw);
@@ -330,10 +345,11 @@ async function buildOpeningForCaller(phone, reminderText = null) {
   if (!previous.length) return appSettings.firstCallMessage;
   const history = previous.map(x=>'המתקשר: '+x.user+'\nAI: '+x.gemini).join('\n\n');
   try {
+    // השתמשתי במודל טקסט רגיל כדי לקבל פתיח זורם
     const r = await generateWithRetry([{text:`${getExclusiveInstruction()}
 הנה קטעים משיחות קודמות:
 ${history}
-צור פתיח קצר בעברית שמזכיר בקצרה את הנושא האחרון ושואל על מה המתקשר רוצה לדבר עכשיו. בלי נקודות ובלי מרכאות.`}]);
+צור פתיח קצר בעברית שמזכיר בקצרה את הנושא האחרון ושואל על מה המתקשר רוצה לדבר עכשיו. בלי נקודות ובלי מרכאות.`}], 'text');
     return sanitizeForYemot(r.response.text()) || 'שלום שוב שמח לשמוע ממך על מה תרצה לדבר עכשיו';
   } catch { return 'שלום שוב שמח לשמוע ממך על מה תרצה לדבר עכשיו'; }
 }
@@ -390,7 +406,7 @@ async function callHandler(call) {
         break;
       }
 
-      activeCallObj.status = 'מעבד הקלטה ראשונית';
+      activeCallObj.status = 'הקלטה התקבלה — מפענח פקודה';
       let audioBuffer;
       try {
         const response=await withTimeout(yemotApi.download_file('ivr2:'+recordPath), REQUEST_TIMEOUT_MS,'yemotApi.download_file');
@@ -404,50 +420,78 @@ async function callHandler(call) {
       let replyText, transcript='';
       
       try {
+        // שלב 1: זיהוי הצרכים
         const turnResult = await processAudioTurn(audioBase64);
         transcript = turnResult.transcript || 'לא ניתן היה לתמלל';
         replyText = turnResult.answer;
 
-        // שלב 2: סוכן ביצוע כבד (רשת או כתיבת פרויקטים)
-        if (turnResult.needsWebSearch || turnResult.wantsProject) {
-            activeCallObj.status = turnResult.wantsProject ? 'מייצר פרויקט מקצועי...' : 'מבצע חיפוש אינטרנט...';
+        // שלב 2 (אופציונלי): הפעלת סוכני ביצוע כבדים לפי הצורך (טקסט חופשי / רשת)
+        if (turnResult.wantsProject) {
+            activeCallObj.status = 'בונה פרויקט וקוד (פרימיום)...';
+            const projectPrompt = `${getExclusiveInstruction()}
+המשתמש ביקש לבנות את הפרויקט / האתר / התוכן הבא: "${transcript}"
 
-            const webAndProjectPrompt = `${getExclusiveInstruction()}
-המשתמש אמר: "${transcript}"
+הוראות ייצור קפדניות:
+1. עליך לייצר קוד מודרני, ארוך, עשיר, מפורט ומקצועי לחלוטין ברמת Production! בשום אופן אל תייצר רק "שלד" או תבנית בסיסית.
+2. אם התבקשת לבנות אתר - חובה להשתמש ב-Tailwind CSS דרך CDN (<script src="https://cdn.tailwindcss.com"></script>), לעצב בצורה מרהיבה ורספונסיבית, לכלול אלמנטים מציאותיים (כפתורים, כרטיסיות, פוטר, אנימציות CSS) ופונטים יפים (למשל Heebo מ-Google Fonts).
 
-${turnResult.needsWebSearch ? 'חפש עכשיו באינטרנט את המידע העדכני ביותר כדי לענות או כדי לבנות את הפרויקט.' : ''}
+מבנה התשובה שלך חייב להיות אך ורק בפורמט הבא (ללא שום תוספת מסביב):
 
-החזר JSON בלבד במבנה הבא:
-{
-  "answer": "תשובה קולית למתקשר (לדוגמה: אם יצרת אתר, אמור לו שהאתר מוכן ומחכה לו במערכת. אם רק חיפשת מידע, הקרא לו את התשובה)",
-  "saveProject": ${turnResult.wantsProject ? '{"title": "כותרת קצרה ליצירה", "content": "הקוד השלם או התוכן המלא"}' : 'null'}
-}
+[ANSWER]
+כאן תכתוב משפט אחד בעברית שיוקרא למתקשר באוזן (למשל: "מצוין, סיימתי לבנות את האתר המעוצב שלך והוא נשמר במערכת").
+[/ANSWER]
 
-${turnResult.wantsProject ? `### הוראות כירורגיות ליצירת פרויקט מקצועי (content):
-- חובה להחזיר קוד מלא, מודרני, ועובד במלואו, ולא רק שלד!
-- אם התבקשת לבנות אתר/קוד: חובה להשתמש ב-Tailwind CSS (באמצעות <script src="https://cdn.tailwindcss.com"></script>), לעצב בצורה יפהפייה, פונקציונלית, כולל צלליות, מבנה רספונסיבי, צבעים ופונטים. האתר חייב להיראות כמו תוצר ברמה הגבוהה ביותר.
-- הקפד לשמור על JSON תקין וחוקי! במקום גרשיים כפולות למאפייני HTML, השתמש בגרש בודד (לדוגמה: class='bg-blue-500') או עשה Escape מוקפד (\\").` : ''}`;
+[TITLE]
+כותרת קצרה של הפרויקט (עד 5 מילים)
+[/TITLE]
 
-            const secondaryResult = await generateWithRetry([{text: webAndProjectPrompt}], turnResult.needsWebSearch);
-            const secRaw = secondaryResult.response.text().trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-            const secParsed = JSON.parse(secRaw);
+[CONTENT]
+כאן תכניס את כל הקוד המלא, ברמת פירוט מקסימלית.
+[/CONTENT]`;
 
-            replyText = secParsed.answer || replyText;
+            // קורא למודל הטקסט (המשוחרר מ-JSON) ליצירת פרויקט ענק
+            const projRes = await generateWithRetry([{text: projectPrompt}], 'text');
+            const rawOutput = projRes.response.text();
+            
+            // שליפת המידע מתוך הטקסט
+            const ansMatch = rawOutput.match(/\[ANSWER\]([\s\S]*?)\[\/ANSWER\]/i);
+            const titleMatch = rawOutput.match(/\[TITLE\]([\s\S]*?)\[\/TITLE\]/i);
+            const contentMatch = rawOutput.match(/\[CONTENT\]([\s\S]*?)\[\/CONTENT\]/i);
 
-            if (secParsed.saveProject && secParsed.saveProject.title && secParsed.saveProject.content) {
+            if (ansMatch) replyText = ansMatch[1].trim();
+            else replyText = "הפרויקט המלא שלך מוכן וממתין במערכת.";
+
+            if (titleMatch && contentMatch) {
+                // ניקוי עטיפות ה-Markdown (```html) אם המודל הוסיף אותן בטעות
+                let cleanContent = contentMatch[1].trim();
+                cleanContent = cleanContent.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+
                 const newProject = {
                     id: Date.now().toString(),
                     phone: callerPhone,
-                    title: secParsed.saveProject.title,
-                    content: secParsed.saveProject.content,
+                    title: titleMatch[1].trim() || 'פרויקט חדש',
+                    content: cleanContent,
                     time: new Date().toISOString()
                 };
                 projectsList.unshift(newProject);
                 void persistProject(newProject);
                 addSystemLog(`פרויקט פרימיום נוצר עבור ${callerPhone}: ${newProject.title}`, 'success');
             }
+        } 
+        else if (turnResult.needsWebSearch) {
+            activeCallObj.status = 'מחפש מידע בזמן אמת באינטרנט...';
+            const webPrompt = `${getExclusiveInstruction()}
+המתקשר שאל: "${transcript}"
+
+חפש מידע עדכני ומדויק באינטרנט.
+לאחר מכן, נסח תשובה קצרה, ברורה וקולעת בעברית שתוקרא למתקשר באוזן. 
+אל תכלול קישורים, כתובות אינטרנט או תווים מיוחדים.`;
+            
+            // קורא למודל הייעודי שמחובר למנוע החיפוש של גוגל
+            const webRes = await generateWithRetry([{text: webPrompt}], 'web');
+            replyText = webRes.response.text().trim();
         }
-        
+
       } catch(e) {
         logDetailedError('Gemini processing',e);
         replyText = (e.status === 429 || e.message?.includes('429')) 
@@ -578,7 +622,7 @@ setInterval(async () => {
           const apiKey = process.env.YEMOT_API_KEY || process.env.YEMOT_API_PASSWORD;
           const campId = process.env.REMINDER_KAMPAIN_ID?.trim() || '2';
           const cleanPhone = r.phone.replace(/\D/g, '');
-          const url = `https://www.call2all.co.il/ym/api/RunCampaign?token=${encodeURIComponent(apiKey)}&campId=${encodeURIComponent(campId)}&phones=${encodeURIComponent(cleanPhone)}`;
+          const url = `[https://www.call2all.co.il/ym/api/RunCampaign?token=$](https://www.call2all.co.il/ym/api/RunCampaign?token=$){encodeURIComponent(apiKey)}&campId=${encodeURIComponent(campId)}&phones=${encodeURIComponent(cleanPhone)}`;
           const apiRes = await fetch(url);
           const result = await apiRes.json();
           r.status = result.responseStatus === 'OK' ? 'בוצע' : 'שגיאה';
@@ -594,7 +638,7 @@ setInterval(async () => {
 async function configureYemotStructure() {
   const apiKey=process.env.YEMOT_API_KEY?.trim();
   if(!apiKey) return;
-  const base='https://www.call2all.co.il/ym/api';
+  const base='[https://www.call2all.co.il/ym/api](https://www.call2all.co.il/ym/api)';
   async function updateExtension(path,params) {
     const qs=new URLSearchParams({token:apiKey,path,...params});
     await fetch(`${base}/UpdateExtension?${qs}`);
