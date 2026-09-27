@@ -39,7 +39,6 @@ function markGeminiTargetFailure(modelIndex, keyIndex, error) {
   }
 }
 
-// דיאטה להוראות הצניעות: קצר וקולע למניעת בזבוז אסימונים
 const CONTENT_FILTER_INSTRUCTION = `כלל ברזל: אסור לספק או לעודד תוכן מיני, אלים, סמים, או הימורים. במקרה כזה החזר בדיוק: "היי עצור הקו מסונן ולא ניתן לדבר איתו על תוכן שאינו מתאים לערכי הצניעות"`;
 
 const conversationLog = [];
@@ -305,9 +304,7 @@ function audioParts(audioBase64) {
   return [{inlineData:{mimeType:process.env.YEMOT_AUDIO_MIME_TYPE || 'audio/wav', data:audioBase64}}];
 }
 
-// האזנה וזיהוי כוונות קומפקטי וחסכוני
 async function processAudioTurn(audioBase64, callerPhone) {
-  // נותנים קונטקסט קצרצר למודל שיזכור על מה מדובר (3 הודעות אחרונות בלבד)
   const history = conversationLog.filter(x=>x.phone===callerPhone).slice(-3).map(x=>`Q:${x.user}\nA:${x.gemini}`).join('\n');
   
   const prompt = `${getExclusiveInstruction()}
@@ -351,7 +348,6 @@ async function callHandler(call) {
   addSystemLog(`שיחה חדשה התחילה מהמספר: ${callerPhone}`, 'info');
 
   let firstTurn = true;
-  // חסכנו כאן קריאת API שלמה! אם יש תזכורת - נקריא אותה. אחרת נקריא טקסט פשוט מהשרת לפי היסטוריה
   let openingPrompt = pendingReminderText ? 
     sanitizeForYemot(`שלום, זוהי תזכורת עבורך: ${pendingReminderText}. על מה תרצה לדבר כעת לאחר הצפצוף?`) :
     (conversationLog.some(x=>x.phone===callerPhone) ? 'שלום שוב שמח לשמוע ממך על מה תרצה לדבר עכשיו' : appSettings.firstCallMessage);
@@ -399,14 +395,19 @@ async function callHandler(call) {
         replyText = turnResult.answer;
 
         if (turnResult.wantsProject) {
-            activeCallObj.status = 'בונה פרויקט מורכב...';
+            activeCallObj.status = 'בונה פרויקט/מאמר...';
+            // ההנחיה עודכנה כדי להבדיל בין טקסט (שיוקרא) לבין קוד (שלא יוקרא)
             const projectPrompt = `${getExclusiveInstruction()}
 המשתמש מבקש: "${transcript}"
-ייצר קוד מודרני, עשיר ומושקע באמצעות Tailwind CSS.
+
+הנחיות קריטיות:
+1. אם המשתמש ביקש לכתוב מאמר, סיפור או טקסט: עליך לכתוב את כל המאמר המלא בתוך תגית [ANSWER] כדי שיוקרא לו באוזן! ושים את אותו מאמר גם בתגית [CONTENT] כדי שיישמר במערכת.
+2. אם המשתמש ביקש לבנות קוד או אתר: ייצר קוד מודרני ועשיר עם Tailwind CSS בתוך [CONTENT], ובתוך [ANSWER] כתוב רק משפט אחד קצר (למשל "האתר מוכן וממתין לך במערכת").
+
 חובה להחזיר תבנית זו בדיוק:
-[ANSWER] משפט אחד להקראה [/ANSWER]
+[ANSWER] הטקסט להקראה באוזן [/ANSWER]
 [TITLE] כותרת עד 4 מילים [/TITLE]
-[CONTENT] קוד מלא כאן [/CONTENT]`;
+[CONTENT] הקוד המלא או התוכן לשמירה בדאשבורד [/CONTENT]`;
 
             const projRes = await generateWithRetry([{text: projectPrompt}], 'text');
             const rawOutput = projRes.response.text();
@@ -419,204 +420,4 @@ async function callHandler(call) {
             else replyText = "הפרויקט מוכן וממתין בדאשבורד.";
 
             if (titleMatch && contentMatch) {
-                let cleanContent = contentMatch[1].trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-                const newProject = {
-                    id: Date.now().toString(),
-                    phone: callerPhone,
-                    title: titleMatch[1].trim() || 'פרויקט חדש',
-                    content: cleanContent,
-                    time: new Date().toISOString()
-                };
-                projectsList.unshift(newProject);
-                void persistProject(newProject);
-                addSystemLog(`פרויקט עשיר נוצר עבור ${callerPhone}`, 'success');
-            }
-        } 
-        else if (turnResult.needsWebSearch) {
-            activeCallObj.status = 'מחפש ברשת...';
-            const webPrompt = `${getExclusiveInstruction()}
-שאלה: "${transcript}"
-חפש ברשת מידע עדכני ומדויק. החזר תשובה קצרה להקראה טלפונית ללא קישורים.`;
-            
-            const webRes = await generateWithRetry([{text: webPrompt}], 'web');
-            replyText = sanitizeForYemot(webRes.response.text());
-        }
-
-      } catch(e) {
-        logDetailedError('Gemini processing',e);
-        replyText = (e.status === 429 || e.message?.includes('429')) 
-          ? 'מצטערים, הגענו למכסת הפניות היומית מגוגל. נסה שוב מאוחר יותר.'
-          : (e.status === 503 ? 'אני קצת עמוס כרגע נסה שוב' : 'תקלה בעיבוד אפשר לנסות שוב');
-      }
-
-      replyText=sanitizeForYemot(replyText)||'מצטער לא הצלחתי לנסח תשובה';
-      await addConversationEntry({phone:callerPhone,callId,userText:transcript,geminiText:replyText});
-
-      if (activeCallObj.killRequested) break;
-
-      try {
-        await call.id_list_message([{type:'text',data:replyText}],{prependToNextAction:true});
-      } catch(e) {
-        if (e instanceof ExitError || e?.name === 'ExitError') break;
-      }
-    }
-  } catch (err) {
-    if (!(err instanceof ExitError || err?.name === 'ExitError')) logDetailedError('fatal call loop error', err);
-  } finally {
-    activeCalls.delete(activeKey);
-    addSystemLog(`שיחה הסתיימה עבור מספר: ${callerPhone}`, 'info');
-  }
-}
-
-router.all('/yemot',callHandler);
-app.use(router);
-
-app.get('/api/conversations',(req,res)=>res.json({
-  conversations:conversationLog,
-  activeCalls:Array.from(activeCalls.values()),
-  reminders: remindersList,
-  projects: projectsList,
-  systemLogs: systemLogs,
-  settings: appSettings,
-  totalMessages:conversationLog.length,
-  totalCallers:new Set(conversationLog.map(x=>x.phone)).size,
-  serverTime:new Date().toISOString()
-}));
-
-app.get('/api/settings', (req, res) => res.json(appSettings));
-
-app.post('/api/reminders', (req, res) => {
-  const { phone, time, text, type } = req.body;
-  if (!phone || !time || !text) return res.status(400).json({ error: 'Missing phone, time or text' });
-  const reminder = {
-    id: Date.now().toString(), phone: String(phone).trim(), time: String(time).trim(), text: String(text).trim(),
-    type: type || 'שיחה קולית מלאה', status: 'ממתין', triggered: false, consumed: false, lastTriggeredDate: null
-  };
-  remindersList.push(reminder);
-  void persistReminder(reminder);
-  addSystemLog(`תזכורת חדשה נוספה למספר ${phone} לשעה ${time}`, 'success');
-  res.json({ ok: true, reminder });
-});
-
-app.delete('/api/reminders/:id', (req, res) => {
-  const id = req.params.id;
-  const idx = remindersList.findIndex(r => r.id === id);
-  if (idx !== -1) {
-    const removed = remindersList.splice(idx, 1)[0];
-    void deletePersistedReminder(removed);
-    res.json({ ok: true });
-  } else { res.status(404).json({ error: 'Reminder not found' }); }
-});
-
-app.delete('/api/projects/:id', (req, res) => {
-  const id = req.params.id;
-  const idx = projectsList.findIndex(p => p.id === id);
-  if (idx !== -1) {
-    const removed = projectsList.splice(idx, 1)[0];
-    void deletePersistedProject(removed);
-    addSystemLog(`פרויקט נמחק: ${removed.title}`, 'info');
-    res.json({ ok: true });
-  } else { res.status(404).json({ error: 'Project not found' }); }
-});
-
-app.post('/api/calls/:id/kill', (req, res) => {
-  const callId = req.params.id;
-  const callObj = activeCalls.get(callId);
-  if (!callObj) return res.status(404).json({ error: 'Call not found' });
-  callObj.killRequested = true;
-  callObj.status = 'התבקש ניתוק';
-  res.json({ ok: true, message: 'Kill signal sent to call' });
-});
-
-app.post('/api/settings', (req, res) => {
-  const { firstCallMessage, systemInstruction } = req.body;
-  if (typeof firstCallMessage === 'string') appSettings.firstCallMessage = firstCallMessage;
-  if (typeof systemInstruction === 'string') appSettings.systemInstruction = systemInstruction;
-  addSystemLog('הגדרות המערכת עודכנו', 'success');
-  res.json({ ok: true, settings: appSettings });
-});
-
-app.get('/health',(req,res)=>res.json({ok:true}));
-app.get('/',(req,res)=>res.type('html').send(fs.readFileSync(path.resolve('dashboard.html'), 'utf8')));
-
-let reminderCheckRunning = false;
-let lastReminderCheckMs = Date.now();
-
-setInterval(async () => {
-  if (reminderCheckRunning) return;
-  reminderCheckRunning = true;
-  try {
-    const nowIsrael = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Jerusalem" }));
-    const nowMs = nowIsrael.getTime();
-    const currentDateStr = [nowIsrael.getFullYear(), String(nowIsrael.getMonth() + 1).padStart(2, '0'), String(nowIsrael.getDate()).padStart(2, '0')].join('-');
-    for (const r of remindersList) {
-      if (r.triggered && r.status !== 'שגיאה') continue;
-      let isTimeToRun = false;
-      if (r.time.includes('T')) {
-        const targetDate = new Date(r.time);
-        isTimeToRun = Number.isFinite(targetDate.getTime()) && targetDate.getTime() <= nowMs && targetDate.getTime() > lastReminderCheckMs - 24 * 60 * 60 * 1000;
-      } else {
-        const match = r.time.match(/^(\d{1,2}):(\d{2})$/);
-        if (match) {
-          const scheduledMinutes = Number(match[1]) * 60 + Number(match[2]);
-          const currentMinutes = nowIsrael.getHours() * 60 + nowIsrael.getMinutes();
-          const alreadyTriggeredToday = r.lastTriggeredDate === currentDateStr;
-          isTimeToRun = !alreadyTriggeredToday && currentMinutes >= scheduledMinutes;
-        }
-      }
-      if (isTimeToRun) {
-        r.triggered = true; r.status = 'מפעיל';
-        if (!r.time.includes('T')) r.lastTriggeredDate = currentDateStr;
-        void persistReminder(r);
-        try {
-          const apiKey = process.env.YEMOT_API_KEY || process.env.YEMOT_API_PASSWORD;
-          const campId = process.env.REMINDER_KAMPAIN_ID?.trim() || '2';
-          const cleanPhone = r.phone.replace(/\D/g, '');
-          const url = `[https://www.call2all.co.il/ym/api/RunCampaign?token=$](https://www.call2all.co.il/ym/api/RunCampaign?token=$){encodeURIComponent(apiKey)}&campId=${encodeURIComponent(campId)}&phones=${encodeURIComponent(cleanPhone)}`;
-          const apiRes = await fetch(url);
-          const result = await apiRes.json();
-          r.status = result.responseStatus === 'OK' ? 'בוצע' : 'שגיאה';
-          if(r.status==='שגיאה') r.triggered=false;
-          void persistReminder(r);
-        } catch (err) { r.status = 'שגיאה'; r.triggered = false; void persistReminder(r); }
-      }
-    }
-    lastReminderCheckMs = nowMs;
-  } catch (err) {} finally { reminderCheckRunning = false; }
-}, 30000);
-
-async function configureYemotStructure() {
-  const apiKey=process.env.YEMOT_API_KEY?.trim();
-  if(!apiKey) return;
-  const base='[https://www.call2all.co.il/ym/api](https://www.call2all.co.il/ym/api)';
-  async function updateExtension(path,params) {
-    const qs=new URLSearchParams({token:apiKey,path,...params});
-    await fetch(`${base}/UpdateExtension?${qs}`);
-  }
-  const publicUrl=(process.env.PUBLIC_BASE_URL||'').replace(/\/$/,'');
-  if(!publicUrl) return;
-  try {
-      await updateExtension('ivr2:/1',{type:'api',api_link:publicUrl+'/yemot'});
-      const voiceMap=(process.env.YEMOT_VOICE_OPTIONS||'1:Elik_2100,2:Jacob,3:ymMale').split(',');
-      for(const item of voiceMap){
-        const [extension,voice]=item.split(':');
-        if(!extension||!voice) continue;
-        await updateExtension(`ivr2:/2/${extension}`,{
-          type:'add_id_to_list',add_id_to_list_location_list:'/ivr', add_id_to_list_key:'voice',add_id_to_list_value:voice,
-          add_id_to_list_value_change:'yes',add_id_to_list_end_goto:'/1', add_id_to_list_error_end_goto:'/2'
-        });
-      }
-  } catch(e) {}
-}
-
-process.on('unhandledRejection',(reason)=>{if(!(reason instanceof ExitError)) logDetailedError('Unhandled Rejection',reason)});
-process.on('uncaughtException',(err)=>{if(!(err instanceof ExitError)) logDetailedError('Uncaught Exception',err)});
-const port=process.env.PORT||3000;
-app.listen(port,async()=>{
-  console.log('server running on port '+port);
-  addSystemLog('השרת עלה בהצלחה על פורט ' + port, 'success');
-  await loadConversationLog();
-  await loadRemindersFromSupabase();
-  await loadProjectsFromSupabase();
-  await configureYemotStructure();
-});
+                let cleanContent = contentMatch[1].trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?
