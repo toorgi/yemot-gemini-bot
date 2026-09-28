@@ -17,7 +17,6 @@ if (!apiKeys.length) {
   console.warn('Gemini is not configured yet. Set GEMINI_API_KEYS.');
 }
 
-// שדרוג 1: הגדרת שליחת אימיילים
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: { user: process.env.EMAIL_USER || '', pass: process.env.EMAIL_PASS || '' }
@@ -76,7 +75,6 @@ function getCallerNumber(call) {
   return normalizePhone(call?.values?.ApiPhone ?? call?.req?.query?.ApiPhone ?? call?.req?.body?.ApiPhone ?? call?.query?.ApiPhone);
 }
 
-// שדרוג 2: כיווץ זיכרון היסטוריה לחיסכון עצום בטוקנים
 function getCompressedHistory(phone, limit = 3) {
   return conversationLog
     .filter(x => x.phone === phone)
@@ -84,7 +82,7 @@ function getCompressedHistory(phone, limit = 3) {
     .map(x => {
       let aiResponse = x.gemini || '';
       if (aiResponse.length > 200) {
-        aiResponse = aiResponse.substring(0, 200) + '... [התוכן קוצר כדי לחסוך באסימונים, אך זכור שיצרת עבורו פרויקט בנושא זה]';
+        aiResponse = aiResponse.substring(0, 200) + '... [התוכן קוצר כדי לחסוך באסימונים]';
       }
       return `Q:${x.user}\nA:${aiResponse}`;
     }).join('\n');
@@ -100,7 +98,7 @@ async function loadConversationLog() {
       id: String(row.id), time: row.created_at, phone: normalizePhone(row.phone),
       callId: String(row.call_id || ''), user: row.user_text || '', gemini: row.gemini_text || ''
     })));
-  } catch (e) { addSystemLog('שגיאה בטעינת היסטוריה: ' + e.message, 'error'); }
+  } catch (e) {}
 }
 
 async function loadRemindersFromSupabase() {
@@ -183,9 +181,9 @@ async function addConversationEntry({phone, callId, userText, geminiText}) {
 
 function sanitizeForYemot(text) { return String(text||'').replace(/[."“”‘’']/g, ' ').replace(/[-–—]/g, ' ').replace(/\s+/g, ' ').trim(); }
 
+// Fixed the syntax error by using hex code \x60 for backticks
 function extractJsonSafely(raw) {
-  try { return JSON.parse(raw.trim().replace(/^
-```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()); } catch { return null; }
+  try { return JSON.parse(raw.trim().replace(/^\x60\x60\x60(?:json)?\s*/i, '').replace(/\s*\x60\x60\x60$/i, '').trim()); } catch { return null; }
 }
 
 function withTimeout(promise, ms, label) {
@@ -237,9 +235,7 @@ const router = YemotRouter({ printLog: true, defaults: { removeInvalidChars: tru
 function audioParts(audioBase64) { return [{inlineData:{mimeType:process.env.YEMOT_AUDIO_MIME_TYPE || 'audio/wav', data:audioBase64}}]; }
 
 async function processAudioTurn(audioBase64, callerPhone) {
-  // שימוש בהיסטוריה מכווצת
   const history = getCompressedHistory(callerPhone, 3);
-  
   const prompt = `${getExclusiveInstruction()}
 הקשר קודם:
 ${history}
@@ -325,15 +321,14 @@ async function callHandler(call) {
             else replyText = "הפרויקט מוכן וממתין בדאשבורד.";
 
             if (titleMatch && contentMatch) {
-                let cleanContent = contentMatch[1].trim().replace(/^
-```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+                // Fixed the syntax error here too by using hex code \x60
+                let cleanContent = contentMatch[1].trim().replace(/^\x60\x60\x60[a-z]*\n?/i, '').replace(/\n?\x60\x60\x60$/i, '').trim();
                 const title = titleMatch[1].trim() || 'פרויקט חדש';
                 const newProject = { id: Date.now().toString(), phone: callerPhone, title: title, content: cleanContent, time: new Date().toISOString() };
                 projectsList.unshift(newProject);
                 void persistProject(newProject);
                 addSystemLog(`פרויקט עשיר נוצר עבור ${callerPhone}`, 'success');
 
-                // טיפול במשלוח אימייל
                 if (turnResult.sendEmailTo) {
                     if (process.env.EMAIL_USER) {
                         try {
@@ -448,7 +443,7 @@ setInterval(async () => {
           const apiKey = process.env.YEMOT_API_KEY || process.env.YEMOT_API_PASSWORD;
           const campId = process.env.REMINDER_KAMPAIN_ID?.trim() || '2';
           const cleanPhone = r.phone.replace(/\D/g, '');
-          const url = `https://www.call2all.co.il/ym/api/RunCampaign?token=${encodeURIComponent(apiKey)}&campId=${encodeURIComponent(campId)}&phones=${encodeURIComponent(cleanPhone)}`;
+          const url = `[https://www.call2all.co.il/ym/api/RunCampaign?token=$](https://www.call2all.co.il/ym/api/RunCampaign?token=$){encodeURIComponent(apiKey)}&campId=${encodeURIComponent(campId)}&phones=${encodeURIComponent(cleanPhone)}`;
           const result = await (await fetch(url)).json();
           r.status = result.responseStatus === 'OK' ? 'בוצע' : 'שגיאה';
           if(r.status==='שגיאה') r.triggered=false;
@@ -462,7 +457,7 @@ setInterval(async () => {
 
 async function configureYemotStructure() {
   const apiKey=process.env.YEMOT_API_KEY?.trim(); if(!apiKey) return;
-  const base='https://www.call2all.co.il/ym/api';
+  const base='[https://www.call2all.co.il/ym/api](https://www.call2all.co.il/ym/api)';
   async function updateExtension(path,params) { await fetch(`${base}/UpdateExtension?${new URLSearchParams({token:apiKey,path,...params})}`); }
   const publicUrl=(process.env.PUBLIC_BASE_URL||'').replace(/\/$/,''); if(!publicUrl) return;
   try {
