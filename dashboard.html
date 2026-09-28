@@ -31,11 +31,14 @@
             <button onclick="switchTab('dashboard')" id="btn-dashboard" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-blue-600 text-white transition-colors">
                 <i class="fa-solid fa-chart-pie w-5"></i> לוח בקרה
             </button>
+            <button onclick="switchTab('simulator')" id="btn-simulator" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 text-slate-300 transition-colors">
+                <i class="fa-solid fa-laptop-code w-5 text-emerald-400"></i> סימולטור צ'אט (חדש)
+            </button>
             <button onclick="switchTab('history')" id="btn-history" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 text-slate-300 transition-colors">
                 <i class="fa-solid fa-comments w-5"></i> היסטוריית שיחות
             </button>
             <button onclick="switchTab('projects')" id="btn-projects" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 text-slate-300 transition-colors">
-                <i class="fa-solid fa-folder-open w-5 text-amber-400"></i> היצירות שלי (Projects)
+                <i class="fa-solid fa-folder-open w-5 text-amber-400"></i> היצירות שלי
             </button>
             <button onclick="switchTab('reminders')" id="btn-reminders" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 text-slate-300 transition-colors">
                 <i class="fa-solid fa-clock w-5"></i> תזכורות וצנתוקים
@@ -88,11 +91,29 @@
             </div>
         </section>
 
+        <!-- סימולטור צ'אט אינטרנטי (חדש!) -->
+        <section id="tab-simulator" class="tab-content">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 h-[75vh] flex flex-col overflow-hidden max-w-4xl mx-auto">
+                <div class="px-6 py-4 border-b border-slate-100 bg-emerald-50 flex justify-between items-center">
+                    <h3 class="font-bold text-emerald-800"><i class="fa-solid fa-laptop-code text-emerald-500 ml-2"></i> סימולטור הבוט - צ'אט חי</h3>
+                    <p class="text-xs text-emerald-600">כל דבר שתכתוב כאן יעבור לבוט כאילו דיברת איתו בטלפון</p>
+                </div>
+                <div id="sim-chat-window" class="flex-1 p-6 overflow-y-auto space-y-4 bg-slate-50" style="background-image: url('https://www.transparenttextures.com/patterns/cubes.png');">
+                    <div class="flex justify-end mb-4"><div class="msg-bubble msg-ai p-3 shadow-sm border border-slate-200 text-sm text-slate-800">שלום, אני הסימולטור של הבוט שלך. מה תרצה שאעשה עבורך? (אתה יכול לבקש שאחפש באינטרנט או שאבנה קוד).</div></div>
+                </div>
+                <div class="p-4 bg-white border-t border-slate-200 flex gap-3">
+                    <input type="text" id="sim-input" class="flex-1 border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-shadow" placeholder="הקלד את ההנחיה שלך כאן..." onkeypress="if(event.key === 'Enter') sendSimMessage()">
+                    <button onclick="sendSimMessage()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold shadow-md transition-colors">
+                        שלח <i class="fa-solid fa-paper-plane ml-1"></i>
+                    </button>
+                </div>
+            </div>
+        </section>
+
         <!-- היסטוריה -->
         <section id="tab-history" class="tab-content">
             <div class="bg-slate-200 rounded-2xl shadow-inner border border-slate-300 h-[70vh] flex flex-col overflow-hidden relative">
                 <div class="absolute inset-0 opacity-10 pointer-events-none" style="background-image: url('https://www.transparenttextures.com/patterns/cubes.png');"></div>
-                <!-- שדרוג 4: הוספת כפתור ייצוא נתונים -->
                 <div class="p-4 bg-white border-b border-slate-200 flex justify-between items-center z-10">
                     <h3 class="font-bold text-slate-800">היסטוריית שיחות מלאה</h3>
                     <div class="flex items-center gap-3">
@@ -159,8 +180,6 @@
                     <h3 class="text-xl font-bold text-slate-800"><i class="fa-solid fa-sliders text-blue-500 ml-2"></i> שליטה בהתנהגות הבוט</h3>
                 </div>
                 <form id="settings-form" class="space-y-6">
-                    
-                    <!-- שדרוג 5: בחירת דמויות מוכנות מראש -->
                     <div class="bg-indigo-50 border border-indigo-100 p-4 rounded-xl mb-4">
                         <label class="block font-bold text-indigo-800 mb-2"><i class="fa-solid fa-masks-theater mr-1"></i> תבניות אישיות מוכנות (Personas)</label>
                         <select id="persona-selector" onchange="applyPersona()" class="w-full border border-indigo-200 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 text-sm">
@@ -172,7 +191,6 @@
                             <option value="אתה מספר סיפורים מרתק לילדים. שזור מתח, קסם ומוסר השכל יפה בכל תשובה.">מספר סיפורים לילדים</option>
                         </select>
                     </div>
-
                     <div>
                         <label class="block font-bold text-slate-800 mb-2">הוראות מערכת פעילות (System Instructions)</label>
                         <textarea id="set-system" rows="6" class="w-full border border-slate-300 rounded-lg p-4 font-mono text-sm shadow-inner"></textarea>
@@ -206,7 +224,7 @@
     <div id="toast-container" class="fixed bottom-5 left-5 z-50 flex flex-col gap-2"></div>
 
     <script>
-        const titles = { 'dashboard': 'לוח בקרה בזמן אמת', 'history': 'היסטוריית שיחות והודעות', 'projects': 'היצירות והפרויקטים שלי', 'reminders': 'ניהול תזכורות וצנתוקים', 'logs': 'לוג מערכת בזמן אמת', 'settings': 'הגדרות ושליטה בבוט' };
+        const titles = { 'dashboard': 'לוח בקרה בזמן אמת', 'simulator': 'סימולטור צ\'אט', 'history': 'היסטוריית שיחות והודעות', 'projects': 'היצירות והפרויקטים שלי', 'reminders': 'ניהול תזכורות וצנתוקים', 'logs': 'לוג מערכת בזמן אמת', 'settings': 'הגדרות ושליטה בבוט' };
 
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -229,9 +247,7 @@
             setTimeout(() => { toast.classList.add('opacity-0'); setTimeout(() => toast.remove(), 300); }, 3000);
         }
 
-        let currentReminders = [];
-        let currentProjects = [];
-        let currentConversations = []; // נדרש לייצוא נתונים
+        let currentReminders = []; let currentProjects = []; let currentConversations = [];
 
         async function fetchData() {
             try {
@@ -254,6 +270,38 @@
                 document.getElementById('server-status').innerText = 'מחובר'; document.getElementById('server-status').classList.replace('text-red-500', 'text-slate-600');
             } catch (error) {
                 document.getElementById('server-status').innerText = 'שגיאת תקשורת'; document.getElementById('server-status').classList.add('text-red-500');
+            }
+        }
+
+        // פונקציית שליחה מהסימולטור 
+        async function sendSimMessage() {
+            const input = document.getElementById('sim-input');
+            const text = input.value.trim();
+            if(!text) return;
+            
+            const chatWin = document.getElementById('sim-chat-window');
+            chatWin.innerHTML += `<div class="flex justify-start mb-2"><div class="msg-bubble msg-user p-3 shadow-sm border border-green-200 text-sm text-slate-800">${text}</div></div>`;
+            input.value = '';
+            chatWin.scrollTop = chatWin.scrollHeight;
+
+            const typingId = 'typing-' + Date.now();
+            chatWin.innerHTML += `<div id="${typingId}" class="flex justify-end mb-4"><div class="text-sm text-slate-500"><i class="fa-solid fa-circle-notch fa-spin"></i> ה-AI מעבד נתונים...</div></div>`;
+            chatWin.scrollTop = chatWin.scrollHeight;
+
+            try {
+                const res = await fetch('/api/simulate', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text })
+                });
+                const data = await res.json();
+                document.getElementById(typingId).remove();
+                
+                chatWin.innerHTML += `<div class="flex justify-end mb-4"><div class="msg-bubble msg-ai p-3 shadow-sm border border-slate-200 text-sm text-slate-800">${data.reply || 'שגיאה'}</div></div>`;
+                chatWin.scrollTop = chatWin.scrollHeight;
+                fetchData(); // מרענן כדי להראות את הפרויקט במידה ונוצר
+            } catch(e) {
+                document.getElementById(typingId).remove();
+                showToast('שגיאה בתקשורת עם השרת', 'error');
             }
         }
 
@@ -337,30 +385,22 @@
             container.innerHTML = html; container.scrollTop = container.scrollHeight;
         }
 
-        // פונקציית ייצוא נתונים
         function exportToCSV() {
             if(!currentConversations || currentConversations.length === 0) { showToast('אין נתונים לייצוא', 'error'); return; }
             let csv = 'תאריך,טלפון,משתמש,AI\n';
             currentConversations.forEach(c => {
                 const time = new Date(c.time).toLocaleString('he-IL');
-                const user = (c.user || '').replace(/,/g, ' '); // מניעת שבירת CSV
+                const user = (c.user || '').replace(/,/g, ' '); 
                 const gemini = (c.gemini || '').replace(/,/g, ' ');
                 csv += `${time},${c.phone},${user},${gemini}\n`;
             });
             const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(blob);
-            link.download = "Yemot_History_Export.csv";
-            link.click();
+            const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "Yemot_History_Export.csv"; link.click();
         }
 
-        // פונקציית טעינת אישיות
         function applyPersona() {
             const val = document.getElementById('persona-selector').value;
-            if (val) {
-                document.getElementById('set-system').value = val;
-                showToast('האישיות נטענה לתיבה. אל תשכח ללחוץ על "שמור הגדרות"!', 'success');
-            }
+            if (val) { document.getElementById('set-system').value = val; showToast('האישיות נטענה לתיבה. אל תשכח ללחוץ על "שמור הגדרות"!', 'success'); }
         }
 
         document.getElementById('reminder-form').addEventListener('submit', async (e) => {
@@ -385,10 +425,7 @@
         }
 
         async function deleteReminder(id) { try { const res = await fetch(`/api/reminders/${id}`, { method: 'DELETE' }); if(res.ok) { fetchData(); showToast('התזכורת נמחקה.'); } } catch(e) {} }
-
-        async function loadSettings() {
-            try { const res = await fetch('/api/settings'); if(res.ok) { const data = await res.json(); document.getElementById('set-system').value = data.systemInstruction || ''; document.getElementById('set-first').value = data.firstCallMessage || ''; } } catch(e) {}
-        }
+        async function loadSettings() { try { const res = await fetch('/api/settings'); if(res.ok) { const data = await res.json(); document.getElementById('set-system').value = data.systemInstruction || ''; document.getElementById('set-first').value = data.firstCallMessage || ''; } } catch(e) {} }
 
         document.getElementById('settings-form').addEventListener('submit', async (e) => {
             e.preventDefault();

@@ -81,9 +81,7 @@ function getCompressedHistory(phone, limit = 3) {
     .slice(-limit)
     .map(x => {
       let aiResponse = x.gemini || '';
-      if (aiResponse.length > 200) {
-        aiResponse = aiResponse.substring(0, 200) + '... [התוכן קוצר כדי לחסוך באסימונים]';
-      }
+      if (aiResponse.length > 200) aiResponse = aiResponse.substring(0, 200) + '... [התוכן קוצר כדי לחסוך באסימונים]';
       return `Q:${x.user}\nA:${aiResponse}`;
     }).join('\n');
 }
@@ -108,11 +106,7 @@ async function loadRemindersFromSupabase() {
     const rows = await r.json();
     remindersList.splice(0, remindersList.length);
     for (const row of rows) {
-      try {
-        const data = JSON.parse(row.user_text || '{}');
-        if (!data.id) continue;
-        remindersList.push({ ...data, _supabaseId: row.id });
-      } catch (e) {}
+      try { const data = JSON.parse(row.user_text || '{}'); if (data.id) remindersList.push({ ...data, _supabaseId: row.id }); } catch (e) {}
     }
   } catch (e) {}
 }
@@ -124,11 +118,7 @@ async function loadProjectsFromSupabase() {
     const rows = await r.json();
     projectsList.splice(0, projectsList.length);
     for (const row of rows) {
-      try {
-        const data = JSON.parse(row.user_text || '{}');
-        if (!data.id) continue;
-        projectsList.push({ id: data.id, phone: row.phone, title: data.title || 'ללא שם', content: data.content || '', time: row.created_at, _supabaseId: row.id });
-      } catch (e) { }
+      try { const data = JSON.parse(row.user_text || '{}'); if (data.id) projectsList.push({ id: data.id, phone: row.phone, title: data.title || 'ללא שם', content: data.content || '', time: row.created_at, _supabaseId: row.id }); } catch (e) {}
     }
   } catch (e) {}
 }
@@ -141,8 +131,7 @@ async function persistReminder(reminder) {
       await supabaseRequest('/rest/v1/conversations?id=eq.' + encodeURIComponent(reminder._supabaseId), { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ phone: reminder.phone, call_id: '__reminder__:' + reminder.id, user_text: payload, gemini_text: '' }) });
     } else {
       const r = await supabaseRequest('/rest/v1/conversations', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ phone: reminder.phone, call_id: '__reminder__:' + reminder.id, user_text: payload, gemini_text: '' }) });
-      const created = await r.json();
-      if (Array.isArray(created) && created[0]?.id != null) reminder._supabaseId = created[0].id;
+      const created = await r.json(); if (Array.isArray(created) && created[0]?.id != null) reminder._supabaseId = created[0].id;
     }
   } catch (e) {}
 }
@@ -157,8 +146,7 @@ async function persistProject(project) {
   const payload = JSON.stringify({ id: project.id, title: project.title, content: project.content });
   try {
     const r = await supabaseRequest('/rest/v1/conversations', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ phone: project.phone, call_id: '__project__:' + project.id, user_text: payload, gemini_text: 'PROJECT_SAVED' }) });
-    const created = await r.json();
-    if (Array.isArray(created) && created[0]?.id != null) project._supabaseId = created[0].id;
+    const created = await r.json(); if (Array.isArray(created) && created[0]?.id != null) project._supabaseId = created[0].id;
   } catch (e) {}
 }
 
@@ -181,7 +169,6 @@ async function addConversationEntry({phone, callId, userText, geminiText}) {
 
 function sanitizeForYemot(text) { return String(text||'').replace(/[."“”‘’']/g, ' ').replace(/[-–—]/g, ' ').replace(/\s+/g, ' ').trim(); }
 
-// Fixed the syntax error by using hex code \x60 for backticks
 function extractJsonSafely(raw) {
   try { return JSON.parse(raw.trim().replace(/^\x60\x60\x60(?:json)?\s*/i, '').replace(/\s*\x60\x60\x60$/i, '').trim()); } catch { return null; }
 }
@@ -209,8 +196,7 @@ function getExclusiveInstruction() { return [CONTENT_FILTER_INSTRUCTION, appSett
 async function generateWithRetry(contents, mode = 'json') {
   if (!genAIClients.length || !modelsJson.length || !modelsJson[0]?.length) throw Object.assign(new Error('Gemini is not configured'), {status:400});
   let groups = modelsJson; if (mode === 'text') groups = modelsText; if (mode === 'web') groups = modelsWeb;
-  const deadline = Date.now() + REQUEST_TIMEOUT_MS;
-  let lastError;
+  const deadline = Date.now() + REQUEST_TIMEOUT_MS; let lastError;
   for (let mi = 0; mi < groups.length; mi++) {
     for (let ki = 0; ki < genAIClients.length; ki++) {
       if (isGeminiTargetCoolingDown(mi, ki)) continue;
@@ -247,15 +233,8 @@ sendEmailTo="כתובת אימייל" - רק אם המשתמש הזכיר במפ
 
   const result = await generateWithRetry([...audioParts(audioBase64), {text:prompt}], 'json');
   const parsed = extractJsonSafely(result.response.text());
-  
   if (!parsed) throw Object.assign(new Error('Gemini returned invalid JSON'), {status:502});
-  return {
-    transcript: sanitizeForYemot(parsed.transcript || ''),
-    answer: String(parsed.answer || '').trim(),
-    needsWebSearch: parsed.needsWebSearch === true,
-    wantsProject: parsed.wantsProject === true,
-    sendEmailTo: parsed.sendEmailTo || null
-  };
+  return { transcript: sanitizeForYemot(parsed.transcript || ''), answer: String(parsed.answer || '').trim(), needsWebSearch: parsed.needsWebSearch === true, wantsProject: parsed.wantsProject === true, sendEmailTo: parsed.sendEmailTo || null };
 }
 
 async function callHandler(call) {
@@ -321,7 +300,6 @@ async function callHandler(call) {
             else replyText = "הפרויקט מוכן וממתין בדאשבורד.";
 
             if (titleMatch && contentMatch) {
-                // Fixed the syntax error here too by using hex code \x60
                 let cleanContent = contentMatch[1].trim().replace(/^\x60\x60\x60[a-z]*\n?/i, '').replace(/\n?\x60\x60\x60$/i, '').trim();
                 const title = titleMatch[1].trim() || 'פרויקט חדש';
                 const newProject = { id: Date.now().toString(), phone: callerPhone, title: title, content: cleanContent, time: new Date().toISOString() };
@@ -329,37 +307,24 @@ async function callHandler(call) {
                 void persistProject(newProject);
                 addSystemLog(`פרויקט עשיר נוצר עבור ${callerPhone}`, 'success');
 
-                if (turnResult.sendEmailTo) {
-                    if (process.env.EMAIL_USER) {
-                        try {
-                            const mailOptions = {
-                                from: process.env.EMAIL_USER,
-                                to: turnResult.sendEmailTo,
-                                subject: `ימות המשיח AI - ${title}`,
-                                html: `<div dir="rtl" style="font-family:sans-serif;"><h2>${title}</h2><hr/><pre style="white-space: pre-wrap; font-family:inherit;">${cleanContent}</pre></div>`
-                            };
-                            transporter.sendMail(mailOptions).catch(e => logDetailedError('Mail Error', e));
-                            replyText += " והתוכן נשלח לכתובת המייל שביקשת.";
-                            addSystemLog(`נשלח מייל לכתובת ${turnResult.sendEmailTo}`, 'success');
-                        } catch(e) { addSystemLog('שגיאה בשליחת מייל', 'error'); }
-                    } else {
-                        replyText += " אך מערכת האימיילים טרם הוגדרה בשרת.";
-                    }
+                if (turnResult.sendEmailTo && process.env.EMAIL_USER) {
+                    try {
+                        transporter.sendMail({ from: process.env.EMAIL_USER, to: turnResult.sendEmailTo, subject: `ימות המשיח AI - ${title}`, html: `<div dir="rtl"><h2>${title}</h2><hr/><pre>${cleanContent}</pre></div>` });
+                        replyText += " והתוכן נשלח לכתובת המייל שביקשת.";
+                        addSystemLog(`נשלח מייל לכתובת ${turnResult.sendEmailTo}`, 'success');
+                    } catch(e) { addSystemLog('שגיאה בשליחת מייל', 'error'); }
                 }
             }
         } 
         else if (turnResult.needsWebSearch) {
             activeCallObj.status = 'מחפש ברשת...';
-            const webPrompt = `${getExclusiveInstruction()} \n שאלה: "${transcript}" \n חפש ברשת מידע עדכני ומדויק. החזר תשובה מפורטת להקראה טלפונית ללא קישורים.`;
-            const webRes = await generateWithRetry([{text: webPrompt}], 'web');
+            const webRes = await generateWithRetry([{text: `${getExclusiveInstruction()} \n שאלה: "${transcript}" \n חפש ברשת מידע עדכני ומדויק. החזר תשובה מפורטת להקראה טלפונית ללא קישורים.`}], 'web');
             replyText = sanitizeForYemot(webRes.response.text());
         }
 
       } catch(e) {
         logDetailedError('Gemini processing',e);
-        replyText = (e.status === 429 || e.message?.includes('429')) 
-          ? 'מצטערים, הגענו למכסת הפניות היומית מגוגל. נסה שוב מאוחר יותר.'
-          : (e.status === 503 ? 'אני קצת עמוס כרגע נסה שוב' : 'תקלה בעיבוד אפשר לנסות שוב');
+        replyText = (e.status === 429 || e.message?.includes('429')) ? 'מצטערים, הגענו למכסת הפניות היומית מגוגל. נסה שוב מאוחר יותר.' : (e.status === 503 ? 'אני קצת עמוס כרגע נסה שוב' : 'תקלה בעיבוד אפשר לנסות שוב');
       }
 
       replyText=sanitizeForYemot(replyText)||'מצטער לא הצלחתי לנסח תשובה';
@@ -375,6 +340,64 @@ async function callHandler(call) {
 
 router.all('/yemot',callHandler);
 app.use(router);
+
+// ==== נתיב מיוחד לסימולטור אינטרנטי ====
+app.post('/api/simulate', async (req, res) => {
+  const { text } = req.body;
+  if(!text) return res.status(400).json({error: 'Missing text'});
+  const callerPhone = 'Web-Simulator';
+  
+  try {
+    const history = getCompressedHistory(callerPhone, 3);
+    const prompt = `${getExclusiveInstruction()}\nהקשר קודם:\n${history}\n\nהודעה טקסטואלית חדשה. החזר אך ורק JSON תקני:\n{"transcript":"${text}","answer":"תשובה קצרה","needsWebSearch":false,"wantsProject":false,"sendEmailTo":null}\nwantsProject=true לבקשת קוד/אתר/מאמר. needsWebSearch=true למידע עדכני. sendEmailTo="כתובת אימייל" - רק אם המשתמש הזכיר במפורש לאיזו כתובת לשלוח. אחרת השאר null.`;
+    
+    const result = await generateWithRetry([{text:prompt}], 'json');
+    const parsed = extractJsonSafely(result.response.text());
+    if (!parsed) throw new Error('Invalid JSON');
+    
+    let replyText = parsed.answer || '';
+    let transcript = text;
+    
+    if (parsed.wantsProject || parsed.sendEmailTo) {
+        const projectPrompt = `${getExclusiveInstruction()}\nהמשתמש מבקש: "${transcript}"\nאם המשתמש ביקש לכתוב מאמר או טקסט, כתוב אותו בתוך [ANSWER] כדי שיוקרא, וגם בתוך [CONTENT] לשמירה. אם ביקש קוד, שים קוד רק ב-[CONTENT].\n[ANSWER] הטקסט [/ANSWER]\n[TITLE] כותרת [/TITLE]\n[CONTENT] התוכן [/CONTENT]`;
+        const projRes = await generateWithRetry([{text: projectPrompt}], 'text');
+        const rawOutput = projRes.response.text();
+        
+        const ansMatch = rawOutput.match(/\[ANSWER\]([\s\S]*?)\[\/ANSWER\]/i);
+        const titleMatch = rawOutput.match(/\[TITLE\]([\s\S]*?)\[\/TITLE\]/i);
+        const contentMatch = rawOutput.match(/\[CONTENT\]([\s\S]*?)\[\/CONTENT\]/i);
+
+        if (ansMatch) replyText = ansMatch[1].trim();
+        else replyText = "הפרויקט מוכן וממתין בדאשבורד.";
+
+        if (titleMatch && contentMatch) {
+            let cleanContent = contentMatch[1].trim().replace(/^\x60\x60\x60[a-z]*\n?/i, '').replace(/\n?\x60\x60\x60$/i, '').trim();
+            const title = titleMatch[1].trim() || 'פרויקט חדש';
+            const newProject = { id: Date.now().toString(), phone: callerPhone, title: title, content: cleanContent, time: new Date().toISOString() };
+            projectsList.unshift(newProject);
+            void persistProject(newProject);
+            addSystemLog(`פרויקט עשיר נוצר מהסימולטור`, 'success');
+
+            if (parsed.sendEmailTo && process.env.EMAIL_USER) {
+                try {
+                    transporter.sendMail({ from: process.env.EMAIL_USER, to: parsed.sendEmailTo, subject: `ימות המשיח AI - ${title}`, html: `<div dir="rtl"><h2>${title}</h2><hr/><pre>${cleanContent}</pre></div>` });
+                    replyText += " והתוכן נשלח לכתובת המייל שביקשת.";
+                } catch(e) {}
+            }
+        }
+    } else if (parsed.needsWebSearch) {
+        const webRes = await generateWithRetry([{text: `${getExclusiveInstruction()} \n שאלה: "${transcript}" \n חפש ברשת מידע עדכני ומדויק. החזר תשובה מפורטת להקראה.`}], 'web');
+        replyText = webRes.response.text().trim();
+    }
+
+    replyText = replyText || 'מצטער לא הצלחתי לנסח תשובה';
+    await addConversationEntry({phone:callerPhone, callId:'web-sim', userText:transcript, geminiText:replyText});
+    
+    res.json({ reply: replyText });
+  } catch(e) {
+    res.status(500).json({ reply: 'שגיאה בעת העיבוד מול השרת או גוגל.' });
+  }
+});
 
 app.get('/api/conversations',(req,res)=>res.json({
   conversations:conversationLog, activeCalls:Array.from(activeCalls.values()), reminders: remindersList, projects: projectsList,
@@ -443,7 +466,7 @@ setInterval(async () => {
           const apiKey = process.env.YEMOT_API_KEY || process.env.YEMOT_API_PASSWORD;
           const campId = process.env.REMINDER_KAMPAIN_ID?.trim() || '2';
           const cleanPhone = r.phone.replace(/\D/g, '');
-          const url = `[https://www.call2all.co.il/ym/api/RunCampaign?token=$](https://www.call2all.co.il/ym/api/RunCampaign?token=$){encodeURIComponent(apiKey)}&campId=${encodeURIComponent(campId)}&phones=${encodeURIComponent(cleanPhone)}`;
+          const url = `https://www.call2all.co.il/ym/api/RunCampaign?token=${encodeURIComponent(apiKey)}&campId=${encodeURIComponent(campId)}&phones=${encodeURIComponent(cleanPhone)}`;
           const result = await (await fetch(url)).json();
           r.status = result.responseStatus === 'OK' ? 'בוצע' : 'שגיאה';
           if(r.status==='שגיאה') r.triggered=false;
@@ -457,7 +480,7 @@ setInterval(async () => {
 
 async function configureYemotStructure() {
   const apiKey=process.env.YEMOT_API_KEY?.trim(); if(!apiKey) return;
-  const base='[https://www.call2all.co.il/ym/api](https://www.call2all.co.il/ym/api)';
+  const base='https://www.call2all.co.il/ym/api';
   async function updateExtension(path,params) { await fetch(`${base}/UpdateExtension?${new URLSearchParams({token:apiKey,path,...params})}`); }
   const publicUrl=(process.env.PUBLIC_BASE_URL||'').replace(/\/$/,''); if(!publicUrl) return;
   try {
