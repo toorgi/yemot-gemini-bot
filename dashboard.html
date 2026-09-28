@@ -92,15 +92,21 @@
         <section id="tab-history" class="tab-content">
             <div class="bg-slate-200 rounded-2xl shadow-inner border border-slate-300 h-[70vh] flex flex-col overflow-hidden relative">
                 <div class="absolute inset-0 opacity-10 pointer-events-none" style="background-image: url('https://www.transparenttextures.com/patterns/cubes.png');"></div>
+                <!-- שדרוג 4: הוספת כפתור ייצוא נתונים -->
                 <div class="p-4 bg-white border-b border-slate-200 flex justify-between items-center z-10">
                     <h3 class="font-bold text-slate-800">היסטוריית שיחות מלאה</h3>
-                    <span class="text-xs bg-slate-100 px-2 py-1 rounded text-slate-500">מתעדכן בזמן אמת</span>
+                    <div class="flex items-center gap-3">
+                        <button onclick="exportToCSV()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded transition-colors shadow-sm">
+                            <i class="fa-solid fa-file-csv mr-1"></i> ייצא לאקסל
+                        </button>
+                        <span class="text-xs bg-slate-100 px-2 py-1 rounded text-slate-500 border border-slate-200">מתעדכן בזמן אמת</span>
+                    </div>
                 </div>
                 <div id="history-container" class="flex-1 p-4 overflow-y-auto space-y-4 z-10 flex flex-col"></div>
             </div>
         </section>
 
-        <!-- פרויקטים (היצירות שלי) -->
+        <!-- פרויקטים -->
         <section id="tab-projects" class="tab-content">
             <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 min-h-[70vh]">
                 <div class="flex justify-between items-center border-b pb-4 mb-6">
@@ -117,28 +123,13 @@
                 <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1 h-fit">
                     <h3 class="font-bold text-slate-800 mb-4 border-b pb-2">קביעת תזכורת חדשה</h3>
                     <form id="reminder-form" class="space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1">מספר טלפון יעד</label>
-                            <input type="text" id="rem-phone" class="w-full border border-slate-300 rounded-lg p-2" required>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1">מספר טלפון יעד</label><input type="text" id="rem-phone" class="w-full border border-slate-300 rounded-lg p-2" required></div>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1">סוג הפעולה</label>
+                            <select id="rem-type" class="w-full border border-slate-300 rounded-lg p-2"><option value="שיחה קולית מלאה">שיחה קולית מלאה</option><option value="צנתוק בלבד">צנתוק בלבד</option></select>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1">סוג הפעולה</label>
-                            <select id="rem-type" class="w-full border border-slate-300 rounded-lg p-2">
-                                <option value="שיחה קולית מלאה">שיחה קולית מלאה</option>
-                                <option value="צנתוק בלבד">צנתוק בלבד</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1">מועד</label>
-                            <input type="datetime-local" id="rem-time" class="w-full border border-slate-300 rounded-lg p-2" required>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1">טקסט להקראה</label>
-                            <textarea id="rem-text" rows="3" class="w-full border border-slate-300 rounded-lg p-2"></textarea>
-                        </div>
-                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg transition-colors">
-                            שמור והפעל <i class="fa-solid fa-paper-plane mr-1"></i>
-                        </button>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1">מועד</label><input type="datetime-local" id="rem-time" class="w-full border border-slate-300 rounded-lg p-2" required></div>
+                        <div><label class="block text-sm font-medium text-slate-700 mb-1">טקסט להקראה</label><textarea id="rem-text" rows="3" class="w-full border border-slate-300 rounded-lg p-2"></textarea></div>
+                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg transition-colors">שמור והפעל <i class="fa-solid fa-paper-plane mr-1"></i></button>
                     </form>
                 </div>
                 <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
@@ -168,13 +159,27 @@
                     <h3 class="text-xl font-bold text-slate-800"><i class="fa-solid fa-sliders text-blue-500 ml-2"></i> שליטה בהתנהגות הבוט</h3>
                 </div>
                 <form id="settings-form" class="space-y-6">
+                    
+                    <!-- שדרוג 5: בחירת דמויות מוכנות מראש -->
+                    <div class="bg-indigo-50 border border-indigo-100 p-4 rounded-xl mb-4">
+                        <label class="block font-bold text-indigo-800 mb-2"><i class="fa-solid fa-masks-theater mr-1"></i> תבניות אישיות מוכנות (Personas)</label>
+                        <select id="persona-selector" onchange="applyPersona()" class="w-full border border-indigo-200 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 text-sm">
+                            <option value="">-- בחר אישיות כדי לדרוס את התיבה למטה --</option>
+                            <option value="אתה כותב תוכן מקצועי ומרתק. ענה תמיד בשפה גבוהה, עשירה ומעניינת.">כותב תוכן מומחה</option>
+                            <option value="אתה מתכנת Senior בעל 10 שנות ניסיון. הסבר מושגים בצורה טכנית, מדויקת ומקצועית, וספק קודים איכותיים.">מתכנת בכיר</option>
+                            <option value="אתה יועץ פיננסי חכם. תן טיפים מדויקים לניהול כלכלת המשפחה, חיסכון והשקעות פשוטות.">יועץ פיננסי</option>
+                            <option value="אתה רב קהילה ויועץ חינוכי. ענה בצורה חמה, מכילה, משלבת מקורות יהודיים ועצות פרקטיות לחיים ולשלום בית.">רב ויועץ חינוכי</option>
+                            <option value="אתה מספר סיפורים מרתק לילדים. שזור מתח, קסם ומוסר השכל יפה בכל תשובה.">מספר סיפורים לילדים</option>
+                        </select>
+                    </div>
+
                     <div>
-                        <label class="block font-bold text-slate-800 mb-2">הוראות מערכת (System Instructions)</label>
-                        <textarea id="set-system" rows="6" class="w-full border border-slate-300 rounded-lg p-4 font-mono text-sm"></textarea>
+                        <label class="block font-bold text-slate-800 mb-2">הוראות מערכת פעילות (System Instructions)</label>
+                        <textarea id="set-system" rows="6" class="w-full border border-slate-300 rounded-lg p-4 font-mono text-sm shadow-inner"></textarea>
                     </div>
                     <div>
                         <label class="block font-bold text-slate-800 mb-2">הודעת פתיח ראשונית</label>
-                        <input type="text" id="set-first" class="w-full border border-slate-300 rounded-lg p-3">
+                        <input type="text" id="set-first" class="w-full border border-slate-300 rounded-lg p-3 shadow-inner">
                     </div>
                     <div class="flex justify-end pt-4">
                         <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-bold transition-colors shadow-md">
@@ -186,7 +191,6 @@
         </section>
     </main>
 
-    <!-- Modal for Live Preview -->
     <div id="preview-modal" class="fixed inset-0 bg-slate-900 bg-opacity-75 z-50 hidden flex flex-col items-center justify-center p-4">
         <div class="bg-white rounded-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden shadow-2xl">
             <div class="flex justify-between items-center p-4 border-b bg-slate-100">
@@ -202,22 +206,14 @@
     <div id="toast-container" class="fixed bottom-5 left-5 z-50 flex flex-col gap-2"></div>
 
     <script>
-        const titles = {
-            'dashboard': 'לוח בקרה בזמן אמת', 'history': 'היסטוריית שיחות והודעות',
-            'projects': 'היצירות והפרויקטים שלי', 'reminders': 'ניהול תזכורות וצנתוקים',
-            'logs': 'לוג מערכת בזמן אמת', 'settings': 'הגדרות ושליטה בבוט'
-        };
+        const titles = { 'dashboard': 'לוח בקרה בזמן אמת', 'history': 'היסטוריית שיחות והודעות', 'projects': 'היצירות והפרויקטים שלי', 'reminders': 'ניהול תזכורות וצנתוקים', 'logs': 'לוג מערכת בזמן אמת', 'settings': 'הגדרות ושליטה בבוט' };
 
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.getElementById('tab-' + tabId).classList.add('active');
-            document.querySelectorAll('nav button').forEach(el => {
-                el.classList.remove('bg-blue-600', 'text-white');
-                el.classList.add('hover:bg-slate-800', 'text-slate-300');
-            });
+            document.querySelectorAll('nav button').forEach(el => { el.classList.remove('bg-blue-600', 'text-white'); el.classList.add('hover:bg-slate-800', 'text-slate-300'); });
             const activeBtn = document.getElementById('btn-' + tabId);
-            activeBtn.classList.remove('hover:bg-slate-800', 'text-slate-300');
-            activeBtn.classList.add('bg-blue-600', 'text-white');
+            activeBtn.classList.remove('hover:bg-slate-800', 'text-slate-300'); activeBtn.classList.add('bg-blue-600', 'text-white');
             document.getElementById('page-title').innerText = titles[tabId];
         }
 
@@ -235,6 +231,7 @@
 
         let currentReminders = [];
         let currentProjects = [];
+        let currentConversations = []; // נדרש לייצוא נתונים
 
         async function fetchData() {
             try {
@@ -246,34 +243,23 @@
                 document.getElementById('stat-callers').innerText = data.totalCallers;
                 if(data.projects) document.getElementById('stat-projects').innerText = data.projects.length;
                 
+                currentConversations = data.conversations || [];
                 renderActiveCalls(data.activeCalls);
-                renderHistory(data.conversations);
+                renderHistory(currentConversations);
                 renderSystemLogs(data.systemLogs);
                 
-                if (data.projects) {
-                    currentProjects = data.projects;
-                    renderProjects(currentProjects);
-                }
-                if (data.reminders) {
-                    currentReminders = data.reminders;
-                    renderReminders();
-                }
+                if (data.projects) { currentProjects = data.projects; renderProjects(currentProjects); }
+                if (data.reminders) { currentReminders = data.reminders; renderReminders(); }
 
-                document.getElementById('server-status').innerText = 'מחובר';
-                document.getElementById('server-status').classList.replace('text-red-500', 'text-slate-600');
+                document.getElementById('server-status').innerText = 'מחובר'; document.getElementById('server-status').classList.replace('text-red-500', 'text-slate-600');
             } catch (error) {
-                document.getElementById('server-status').innerText = 'שגיאת תקשורת';
-                document.getElementById('server-status').classList.add('text-red-500');
+                document.getElementById('server-status').innerText = 'שגיאת תקשורת'; document.getElementById('server-status').classList.add('text-red-500');
             }
         }
 
-        // Functions for Projects
         function renderProjects(projects) {
             const container = document.getElementById('projects-container');
-            if (!projects.length) {
-                container.innerHTML = '<div class="col-span-full text-center py-12 text-slate-400"><i class="fa-solid fa-laptop-code text-4xl mb-3 opacity-50"></i><p>עדיין לא נוצרו פרויקטים. התקשר ובקש מהבוט לבנות אתר!</p></div>';
-                return;
-            }
+            if (!projects.length) { container.innerHTML = '<div class="col-span-full text-center py-12 text-slate-400"><i class="fa-solid fa-laptop-code text-4xl mb-3 opacity-50"></i><p>עדיין לא נוצרו פרויקטים. התקשר ובקש מהבוט לבנות משהו!</p></div>'; return; }
             container.innerHTML = projects.map(p => {
                 const isCode = p.content.includes('<html') || p.content.includes('{') || p.content.includes('function');
                 const safeContent = p.content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -281,66 +267,36 @@
                 <div class="project-card border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow bg-slate-50 flex flex-col h-[450px]">
                     <div class="bg-white p-4 border-b">
                         <div class="flex justify-between items-start mb-3">
-                            <div>
-                                <h4 class="font-bold text-lg text-slate-800 truncate max-w-[200px]" title="${p.title}">${p.title}</h4>
-                                <div class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-phone text-slate-300 ml-1"></i> ${p.phone}</div>
-                            </div>
+                            <div><h4 class="font-bold text-lg text-slate-800 truncate max-w-[200px]" title="${p.title}">${p.title}</h4><div class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-phone text-slate-300 ml-1"></i> ${p.phone}</div></div>
                             <div class="flex gap-1 flex-wrap justify-end max-w-[150px]">
                                 <button onclick="previewProject('${p.id}')" class="text-indigo-600 hover:bg-indigo-50 bg-white border border-indigo-100 px-2 py-1 rounded shadow-sm text-xs transition-colors" title="תצוגה מקדימה חיה"><i class="fa-solid fa-eye"></i> צפה</button>
-                                <button onclick="downloadProject('${p.id}')" class="text-green-600 hover:bg-green-50 bg-white border border-green-100 px-2 py-1 rounded shadow-sm text-xs transition-colors" title="הורד קובץ HTML"><i class="fa-solid fa-download"></i> הורד</button>
-                                <button onclick="copyProject('${p.id}')" class="text-blue-600 hover:bg-blue-50 bg-white border border-blue-100 px-2 py-1 rounded shadow-sm text-xs transition-colors" title="העתק קוד"><i class="fa-regular fa-copy"></i> העתק</button>
+                                <button onclick="downloadProject('${p.id}')" class="text-green-600 hover:bg-green-50 bg-white border border-green-100 px-2 py-1 rounded shadow-sm text-xs transition-colors" title="הורד קובץ"><i class="fa-solid fa-download"></i> הורד</button>
+                                <button onclick="copyProject('${p.id}')" class="text-blue-600 hover:bg-blue-50 bg-white border border-blue-100 px-2 py-1 rounded shadow-sm text-xs transition-colors" title="העתק תוכן"><i class="fa-regular fa-copy"></i> העתק</button>
                                 <button onclick="deleteProject('${p.id}')" class="text-red-600 hover:bg-red-50 bg-white border border-red-100 px-2 py-1 rounded shadow-sm text-xs transition-colors" title="מחק"><i class="fa-solid fa-trash"></i></button>
                             </div>
                         </div>
                     </div>
-                    <div class="p-4 overflow-y-auto flex-1 bg-slate-50 text-sm" dir="ltr">
-                        ${isCode ? `<pre class="text-slate-600 bg-slate-100 p-3 rounded border border-slate-200"><code>${safeContent}</code></pre>` 
-                                : `<div class="text-slate-700 whitespace-pre-wrap" dir="rtl">${p.content}</div>`}
+                    <div class="p-4 overflow-y-auto flex-1 bg-slate-50 text-sm" dir="${isCode ? 'ltr' : 'rtl'}">
+                        ${isCode ? `<pre class="text-slate-600 bg-slate-100 p-3 rounded border border-slate-200"><code>${safeContent}</code></pre>` : `<div class="text-slate-700 whitespace-pre-wrap">${p.content}</div>`}
                     </div>
                 </div>
             `}).join('');
         }
 
-        function copyProject(id) {
-            const p = currentProjects.find(x => x.id === id);
-            if(p) navigator.clipboard.writeText(p.content).then(() => showToast('התוכן הועתק בהצלחה!'));
-        }
-
-        function previewProject(id) {
-            const p = currentProjects.find(x => x.id === id);
-            if(!p) return;
-            document.getElementById('preview-title').innerText = p.title;
-            const iframe = document.getElementById('preview-iframe');
-            iframe.srcdoc = p.content;
-            document.getElementById('preview-modal').classList.remove('hidden');
-        }
-
-        function closePreview() {
-            document.getElementById('preview-modal').classList.add('hidden');
-            document.getElementById('preview-iframe').srcdoc = '';
-        }
-
+        function copyProject(id) { const p = currentProjects.find(x => x.id === id); if(p) navigator.clipboard.writeText(p.content).then(() => showToast('התוכן הועתק בהצלחה!')); }
+        function previewProject(id) { const p = currentProjects.find(x => x.id === id); if(!p) return; document.getElementById('preview-title').innerText = p.title; document.getElementById('preview-iframe').srcdoc = p.content; document.getElementById('preview-modal').classList.remove('hidden'); }
+        function closePreview() { document.getElementById('preview-modal').classList.add('hidden'); document.getElementById('preview-iframe').srcdoc = ''; }
         function downloadProject(id) {
-            const p = currentProjects.find(x => x.id === id);
-            if(!p) return;
-            const blob = new Blob([p.content], { type: 'text/html;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = p.title.replace(/[^a-zא-ת0-9]/gi, '_') + '.html';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            showToast('הקובץ הורד למחשב');
+            const p = currentProjects.find(x => x.id === id); if(!p) return;
+            const isCode = p.content.includes('<html'); const extension = isCode ? '.html' : '.txt';
+            const blob = new Blob([p.content], { type: isCode ? 'text/html;charset=utf-8' : 'text/plain;charset=utf-8' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = p.title.replace(/[^a-zא-ת0-9]/gi, '_') + extension;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href); showToast('הקובץ הורד למחשב');
         }
 
         async function deleteProject(id) {
             if(!confirm('האם אתה בטוח שברצונך למחוק את הפרויקט הזה לצמיתות?')) return;
-            try {
-                const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
-                if(res.ok) { showToast('הפרויקט נמחק.'); fetchData(); }
-            } catch(e) { showToast('שגיאת תקשורת', 'error'); }
+            try { const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' }); if(res.ok) { showToast('הפרויקט נמחק.'); fetchData(); } } catch(e) { showToast('שגיאת תקשורת', 'error'); }
         }
 
         function renderSystemLogs(logs) {
@@ -358,30 +314,20 @@
             const container = document.getElementById('active-calls-container');
             if (!calls.length) { container.innerHTML = '<p class="text-slate-500 col-span-2 text-center py-4">אין שיחות פעילות.</p>'; return; }
             container.innerHTML = calls.map(c => `
-                <div class="border border-slate-200 p-4 rounded-xl shadow-sm bg-slate-50">
-                    <div class="flex justify-between items-start mb-3">
-                        <div><span class="bg-green-100 text-green-700 text-xs px-2 py-1 rounded font-bold mb-2 inline-block">חי כעת</span>
-                        <h4 class="font-bold text-lg text-slate-800">${c.phone}</h4></div>
-                        <div class="text-xs text-slate-400">${new Date(c.startedAt).toLocaleTimeString('he-IL')}</div>
-                    </div>
-                    <p class="text-sm text-slate-600 mb-4 bg-white p-2 rounded border"><strong>סטטוס:</strong> ${c.status}</p>
-                    <button onclick="killCall('${c.id}')" class="w-full bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 py-2 rounded-lg font-medium text-sm transition-colors"><i class="fa-solid fa-phone-slash"></i> נתק שיחה</button>
-                </div>
+                <div class="border border-slate-200 p-4 rounded-xl shadow-sm bg-slate-50"><div class="flex justify-between items-start mb-3">
+                <div><span class="bg-green-100 text-green-700 text-xs px-2 py-1 rounded font-bold mb-2 inline-block">חי כעת</span><h4 class="font-bold text-lg text-slate-800">${c.phone}</h4></div>
+                <div class="text-xs text-slate-400">${new Date(c.startedAt).toLocaleTimeString('he-IL')}</div></div>
+                <p class="text-sm text-slate-600 mb-4 bg-white p-2 rounded border"><strong>סטטוס:</strong> ${c.status}</p>
+                <button onclick="killCall('${c.id}')" class="w-full bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200 py-2 rounded-lg font-medium text-sm transition-colors"><i class="fa-solid fa-phone-slash"></i> נתק שיחה</button></div>
             `).join('');
         }
 
-        async function killCall(id) {
-            try {
-                const res = await fetch(`/api/calls/${id}/kill`, { method: 'POST' });
-                if(res.ok) { showToast('נשלחה פקודת ניתוק.'); fetchData(); }
-            } catch(e) {}
-        }
+        async function killCall(id) { try { const res = await fetch(`/api/calls/${id}/kill`, { method: 'POST' }); if(res.ok) { showToast('נשלחה פקודת ניתוק.'); fetchData(); } } catch(e) {} }
 
         function renderHistory(convos) {
             const container = document.getElementById('history-container');
             if (!convos.length) { container.innerHTML = '<p class="text-center py-4 bg-white rounded mt-10 w-fit mx-auto px-6">אין שיחות.</p>'; return; }
-            const sorted = [...convos].sort((a, b) => new Date(a.time) - new Date(b.time));
-            let html = '', lastPhone = '';
+            const sorted = [...convos].sort((a, b) => new Date(a.time) - new Date(b.time)); let html = '', lastPhone = '';
             sorted.forEach(c => {
                 const time = new Date(c.time).toLocaleTimeString('he-IL', {hour: '2-digit', minute:'2-digit'});
                 if (c.phone !== lastPhone) { html += `<div class="text-center my-4"><span class="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full shadow-sm">שיחה מטלפון: ${c.phone}</span></div>`; lastPhone = c.phone; }
@@ -391,13 +337,36 @@
             container.innerHTML = html; container.scrollTop = container.scrollHeight;
         }
 
+        // פונקציית ייצוא נתונים
+        function exportToCSV() {
+            if(!currentConversations || currentConversations.length === 0) { showToast('אין נתונים לייצוא', 'error'); return; }
+            let csv = 'תאריך,טלפון,משתמש,AI\n';
+            currentConversations.forEach(c => {
+                const time = new Date(c.time).toLocaleString('he-IL');
+                const user = (c.user || '').replace(/,/g, ' '); // מניעת שבירת CSV
+                const gemini = (c.gemini || '').replace(/,/g, ' ');
+                csv += `${time},${c.phone},${user},${gemini}\n`;
+            });
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "Yemot_History_Export.csv";
+            link.click();
+        }
+
+        // פונקציית טעינת אישיות
+        function applyPersona() {
+            const val = document.getElementById('persona-selector').value;
+            if (val) {
+                document.getElementById('set-system').value = val;
+                showToast('האישיות נטענה לתיבה. אל תשכח ללחוץ על "שמור הגדרות"!', 'success');
+            }
+        }
+
         document.getElementById('reminder-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const payload = { phone: document.getElementById('rem-phone').value, type: document.getElementById('rem-type').value, time: document.getElementById('rem-time').value, text: document.getElementById('rem-text').value };
-            try {
-                const res = await fetch('/api/reminders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                if(res.ok) { showToast('התזכורת נשמרה!'); document.getElementById('reminder-form').reset(); fetchData(); }
-            } catch(e) {}
+            try { const res = await fetch('/api/reminders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); if(res.ok) { showToast('התזכורת נשמרה!'); document.getElementById('reminder-form').reset(); fetchData(); } } catch(e) {}
         });
 
         function renderReminders() {
@@ -415,24 +384,16 @@
             `).join('');
         }
 
-        async function deleteReminder(id) {
-            try { const res = await fetch(`/api/reminders/${id}`, { method: 'DELETE' }); if(res.ok) { fetchData(); showToast('התזכורת נמחקה.'); } } catch(e) {}
-        }
+        async function deleteReminder(id) { try { const res = await fetch(`/api/reminders/${id}`, { method: 'DELETE' }); if(res.ok) { fetchData(); showToast('התזכורת נמחקה.'); } } catch(e) {} }
 
         async function loadSettings() {
-            try {
-                const res = await fetch('/api/settings');
-                if(res.ok) { const data = await res.json(); document.getElementById('set-system').value = data.systemInstruction || ''; document.getElementById('set-first').value = data.firstCallMessage || ''; }
-            } catch(e) {}
+            try { const res = await fetch('/api/settings'); if(res.ok) { const data = await res.json(); document.getElementById('set-system').value = data.systemInstruction || ''; document.getElementById('set-first').value = data.firstCallMessage || ''; } } catch(e) {}
         }
 
         document.getElementById('settings-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const payload = { systemInstruction: document.getElementById('set-system').value, firstCallMessage: document.getElementById('set-first').value };
-            try {
-                const res = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                if(res.ok) showToast('ההגדרות נשמרו ויחולו על השיחה הבאה!');
-            } catch(e) {}
+            try { const res = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); if(res.ok) showToast('ההגדרות נשמרו ויחולו על השיחה הבאה!'); } catch(e) {}
         });
 
         loadSettings(); fetchData(); setInterval(fetchData, 3000);
