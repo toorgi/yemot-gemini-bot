@@ -17,8 +17,11 @@ if (!apiKeys.length) {
   console.warn('Gemini is not configured yet. Set GEMINI_API_KEYS.');
 }
 
+// התיקון לשגיאת החיבור ב-Render (IPv6 ENETUNREACH)
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
   auth: { user: process.env.EMAIL_USER || '', pass: process.env.EMAIL_PASS || '' }
 });
 
@@ -81,9 +84,7 @@ function getCompressedHistory(phone, limit = 3) {
     .slice(-limit)
     .map(x => {
       let aiResponse = x.gemini || '';
-      if (aiResponse.length > 200) {
-        aiResponse = aiResponse.substring(0, 200) + '... [התוכן קוצר כדי לחסוך באסימונים]';
-      }
+      if (aiResponse.length > 200) aiResponse = aiResponse.substring(0, 200) + '... [התוכן קוצר כדי לחסוך באסימונים]';
       return `Q:${x.user}\nA:${aiResponse}`;
     }).join('\n');
 }
@@ -108,11 +109,7 @@ async function loadRemindersFromSupabase() {
     const rows = await r.json();
     remindersList.splice(0, remindersList.length);
     for (const row of rows) {
-      try {
-        const data = JSON.parse(row.user_text || '{}');
-        if (!data.id) continue;
-        remindersList.push({ ...data, _supabaseId: row.id });
-      } catch (e) {}
+      try { const data = JSON.parse(row.user_text || '{}'); if (data.id) remindersList.push({ ...data, _supabaseId: row.id }); } catch (e) {}
     }
   } catch (e) {}
 }
@@ -124,11 +121,7 @@ async function loadProjectsFromSupabase() {
     const rows = await r.json();
     projectsList.splice(0, projectsList.length);
     for (const row of rows) {
-      try {
-        const data = JSON.parse(row.user_text || '{}');
-        if (!data.id) continue;
-        projectsList.push({ id: data.id, phone: row.phone, title: data.title || 'ללא שם', content: data.content || '', time: row.created_at, _supabaseId: row.id });
-      } catch (e) { }
+      try { const data = JSON.parse(row.user_text || '{}'); if (data.id) projectsList.push({ id: data.id, phone: row.phone, title: data.title || 'ללא שם', content: data.content || '', time: row.created_at, _supabaseId: row.id }); } catch (e) {}
     }
   } catch (e) {}
 }
@@ -141,8 +134,7 @@ async function persistReminder(reminder) {
       await supabaseRequest('/rest/v1/conversations?id=eq.' + encodeURIComponent(reminder._supabaseId), { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ phone: reminder.phone, call_id: '__reminder__:' + reminder.id, user_text: payload, gemini_text: '' }) });
     } else {
       const r = await supabaseRequest('/rest/v1/conversations', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ phone: reminder.phone, call_id: '__reminder__:' + reminder.id, user_text: payload, gemini_text: '' }) });
-      const created = await r.json();
-      if (Array.isArray(created) && created[0]?.id != null) reminder._supabaseId = created[0].id;
+      const created = await r.json(); if (Array.isArray(created) && created[0]?.id != null) reminder._supabaseId = created[0].id;
     }
   } catch (e) {}
 }
@@ -157,8 +149,7 @@ async function persistProject(project) {
   const payload = JSON.stringify({ id: project.id, title: project.title, content: project.content });
   try {
     const r = await supabaseRequest('/rest/v1/conversations', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ phone: project.phone, call_id: '__project__:' + project.id, user_text: payload, gemini_text: 'PROJECT_SAVED' }) });
-    const created = await r.json();
-    if (Array.isArray(created) && created[0]?.id != null) project._supabaseId = created[0].id;
+    const created = await r.json(); if (Array.isArray(created) && created[0]?.id != null) project._supabaseId = created[0].id;
   } catch (e) {}
 }
 
@@ -208,8 +199,7 @@ function getExclusiveInstruction() { return [CONTENT_FILTER_INSTRUCTION, appSett
 async function generateWithRetry(contents, mode = 'json') {
   if (!genAIClients.length || !modelsJson.length || !modelsJson[0]?.length) throw Object.assign(new Error('Gemini is not configured'), {status:400});
   let groups = modelsJson; if (mode === 'text') groups = modelsText; if (mode === 'web') groups = modelsWeb;
-  const deadline = Date.now() + REQUEST_TIMEOUT_MS;
-  let lastError;
+  const deadline = Date.now() + REQUEST_TIMEOUT_MS; let lastError;
   for (let mi = 0; mi < groups.length; mi++) {
     for (let ki = 0; ki < genAIClients.length; ki++) {
       if (isGeminiTargetCoolingDown(mi, ki)) continue;
@@ -246,15 +236,8 @@ sendEmailTo="כתובת אימייל" - רק אם המשתמש הזכיר במפ
 
   const result = await generateWithRetry([...audioParts(audioBase64), {text:prompt}], 'json');
   const parsed = extractJsonSafely(result.response.text());
-  
   if (!parsed) throw Object.assign(new Error('Gemini returned invalid JSON'), {status:502});
-  return {
-    transcript: sanitizeForYemot(parsed.transcript || ''),
-    answer: String(parsed.answer || '').trim(),
-    needsWebSearch: parsed.needsWebSearch === true,
-    wantsProject: parsed.wantsProject === true,
-    sendEmailTo: parsed.sendEmailTo || null
-  };
+  return { transcript: sanitizeForYemot(parsed.transcript || ''), answer: String(parsed.answer || '').trim(), needsWebSearch: parsed.needsWebSearch === true, wantsProject: parsed.wantsProject === true, sendEmailTo: parsed.sendEmailTo || null };
 }
 
 async function callHandler(call) {
@@ -327,7 +310,6 @@ async function callHandler(call) {
                 void persistProject(newProject);
                 addSystemLog(`פרויקט עשיר נוצר עבור ${callerPhone}`, 'success');
 
-                // תוספת ה-AWAIT כדי לתפוס שגיאות שליחה בלייב ולהציג בדאשבורד!
                 if (turnResult.sendEmailTo) {
                     if (process.env.EMAIL_USER) {
                         try {
