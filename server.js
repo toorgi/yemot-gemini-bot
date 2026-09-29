@@ -17,7 +17,6 @@ if (!apiKeys.length) {
   console.warn('Gemini is not configured yet. Set GEMINI_API_KEYS.');
 }
 
-// התיקון לשגיאת החיבור ב-Render (IPv6 ENETUNREACH)
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 465,
@@ -40,8 +39,6 @@ function markGeminiTargetFailure(modelIndex, keyIndex, error) {
   }
 }
 
-const CONTENT_FILTER_INSTRUCTION = `כלל ברזל: אסור לספק או לעודד תוכן מיני, אלים, סמים, או הימורים. במקרה כזה החזר בדיוק: "היי עצור הקו מסונן ולא ניתן לדבר איתו על תוכן שאינו מתאים לערכי הצניעות"`;
-
 const conversationLog = [];
 const activeCalls = new Map();
 const remindersList = [];
@@ -50,7 +47,8 @@ const systemLogs = [];
 
 const appSettings = {
   firstCallMessage: process.env.FIRST_CALL_MESSAGE || 'שלום איך אפשר לעזור לך היום אמור בבקשה על מה תרצה לדבר אחרי הצפצוף ולסיום ההקלטה הקש סולמית',
-  systemInstruction: process.env.AI_SYSTEM_INSTRUCTION || ''
+  systemInstruction: process.env.AI_SYSTEM_INSTRUCTION || '',
+  contactsBook: '' // ספר אנשי הקשר החדש!
 };
 
 const MAX_CONVERSATION_LOG = 1000;
@@ -89,10 +87,40 @@ function getCompressedHistory(phone, limit = 3) {
     }).join('\n');
 }
 
+// ==== טעינה ושמירה קבועה של הגדרות ל-Supabase ====
+async function loadSettingsFromSupabase() {
+  if (!SUPABASE_ENABLED) return;
+  try {
+    const r = await supabaseRequest('/rest/v1/conversations?select=id,user_text&call_id=eq.__settings__&limit=1');
+    const rows = await r.json();
+    if (rows && rows.length > 0) {
+      const loaded = JSON.parse(rows[0].user_text || '{}');
+      if (loaded.systemInstruction !== undefined) appSettings.systemInstruction = loaded.systemInstruction;
+      if (loaded.firstCallMessage !== undefined) appSettings.firstCallMessage = loaded.firstCallMessage;
+      if (loaded.contactsBook !== undefined) appSettings.contactsBook = loaded.contactsBook;
+      appSettings._supabaseId = rows[0].id;
+    }
+  } catch (e) {}
+}
+
+async function persistSettings() {
+  if (!SUPABASE_ENABLED) return;
+  const payload = JSON.stringify({ systemInstruction: appSettings.systemInstruction, firstCallMessage: appSettings.firstCallMessage, contactsBook: appSettings.contactsBook });
+  try {
+    if (appSettings._supabaseId) {
+      await supabaseRequest('/rest/v1/conversations?id=eq.' + encodeURIComponent(appSettings._supabaseId), { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ phone: 'system', call_id: '__settings__', user_text: payload, gemini_text: '' }) });
+    } else {
+      const r = await supabaseRequest('/rest/v1/conversations', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ phone: 'system', call_id: '__settings__', user_text: payload, gemini_text: '' }) });
+      const created = await r.json(); if (Array.isArray(created) && created[0]?.id != null) appSettings._supabaseId = created[0].id;
+    }
+  } catch(e) {}
+}
+// =================================================
+
 async function loadConversationLog() {
   if (!SUPABASE_ENABLED) return;
   try {
-    const r = await supabaseRequest('/rest/v1/conversations?select=id,created_at,phone,call_id,user_text,gemini_text&call_id=not.like.%5F%5Freminder%5F%5F%3A*&order=created_at.desc&limit=' + MAX_CONVERSATION_LOG);
+    const r = await supabaseRequest('/rest/v1/conversations?select=id,created_at,phone,call_id,user_text,gemini_text&call_id=not.like.%5F%5Freminder%5F%5F%3A*&call_id=not.eq.__settings__&order=created_at.desc&limit=' + MAX_CONVERSATION_LOG);
     const rows = await r.json();
     const filteredRows = rows.filter(row => !(row.call_id && row.call_id.startsWith('__project__:')));
     conversationLog.splice(0, conversationLog.length, ...filteredRows.reverse().map(row => ({
@@ -194,7 +222,13 @@ const textConfig = { thinkingConfig: { thinkingLevel: 'minimal' } };
 const modelsText = MODEL_NAMES.map(name => genAIClients.map(ai => ai.getGenerativeModel({model:name, generationConfig: textConfig})));
 const modelsWeb = MODEL_NAMES.map(name => genAIClients.map(ai => ai.getGenerativeModel({model:name, tools:[{googleSearch:{}}], generationConfig: textConfig})));
 
-function getExclusiveInstruction() { return [CONTENT_FILTER_INSTRUCTION, appSettings.systemInstruction].filter(Boolean).join('\n'); }
+function getExclusiveInstruction() {
+  let base = appSettings.systemInstruction || '';
+  if (appSettings.contactsBook && appSettings.contactsBook.trim().length > 0) {
+      base += `\n\n=== ספר אנשי קשר (Contact Book) ===\n${appSettings.contactsBook}`;
+  }
+  return base;
+}
 
 async function generateWithRetry(contents, mode = 'json') {
   if (!genAIClients.length || !modelsJson.length || !modelsJson[0]?.length) throw Object.assign(new Error('Gemini is not configured'), {status:400});
@@ -223,16 +257,17 @@ const router = YemotRouter({ printLog: true, defaults: { removeInvalidChars: tru
 
 function audioParts(audioBase64) { return [{inlineData:{mimeType:process.env.YEMOT_AUDIO_MIME_TYPE || 'audio/wav', data:audioBase64}}]; }
 
+// Prompt משותף לסימולטור ולטלפון
+const BASE_JSON_PROMPT = `הקלטה חדשה. החזר אך ורק JSON תקני:
+{"transcript":"תמלול מדויק","answer":"תשובה קצרה להקראה","needsWebSearch":false,"wantsProject":false,"sendEmailTo":null}
+שים לב: השרת שלנו שולח את האימיילים מאחורי הקלעים! לעולם אל תסרב לבקשת שליחת אימייל ואל תגיד שאין לך יכולת כזו.
+wantsProject=true - רק כאשר המשתמש מבקש קוד, אתר, או יצירת טקסט/מאמר ארוך שצריך לשלוח במייל. 
+needsWebSearch=true - למידע עדכני שצריך לחפש.
+sendEmailTo - אם המשתמש אמר למי לשלוח, חפש את המייל של אותו אדם ב'ספר אנשי קשר' למעלה, והכנס את המייל המדויק שלו. אם המשתמש אמר "למייל שלי" או לא פירט למי, החזר "DEFAULT". אם בכלל לא התבקש אימייל, החזר null.`;
+
 async function processAudioTurn(audioBase64, callerPhone) {
   const history = getCompressedHistory(callerPhone, 3);
-  const prompt = `${getExclusiveInstruction()}
-הקשר קודם:
-${history}
-
-הקלטה חדשה. החזר אך ורק JSON תקני:
-{"transcript":"תמלול מדויק","answer":"תשובה קצרה","needsWebSearch":false,"wantsProject":false,"sendEmailTo":null}
-wantsProject=true לבקשת קוד/אתר/מאמר. needsWebSearch=true למידע עדכני. 
-sendEmailTo="כתובת אימייל" - רק אם המשתמש הזכיר במפורש לאיזו כתובת לשלוח. אחרת השאר null.`;
+  const prompt = `${getExclusiveInstruction()}\n\nהקשר קודם:\n${history}\n\n${BASE_JSON_PROMPT}`;
 
   const result = await generateWithRetry([...audioParts(audioBase64), {text:prompt}], 'json');
   const parsed = extractJsonSafely(result.response.text());
@@ -283,14 +318,19 @@ async function callHandler(call) {
         transcript = turnResult.transcript || 'לא ניתן היה לתמלל';
         replyText = turnResult.answer;
 
-        if (turnResult.wantsProject || turnResult.sendEmailTo) {
+        let targetEmail = turnResult.sendEmailTo;
+        if (targetEmail && targetEmail.toUpperCase() === 'DEFAULT') targetEmail = process.env.EMAIL_USER;
+
+        if (turnResult.wantsProject || targetEmail) {
             activeCallObj.status = 'בונה פרויקט/מאמר...';
             const projectPrompt = `${getExclusiveInstruction()}
 המשתמש מבקש: "${transcript}"
-אם המשתמש ביקש לכתוב מאמר או טקסט, כתוב אותו בתוך [ANSWER] כדי שיוקרא, וגם בתוך [CONTENT] לשמירה. אם ביקש קוד, שים קוד (Tailwind CSS) רק ב-[CONTENT].
+הנחיות ברזל: 
+1. המערכת שולחת אימיילים אוטומטית! לעולם אל תגיד שאין לך אפשרות לשלוח אימיילים. צור את התוכן עצמו במלואו.
+2. תמיד שים את הטקסט הקצר להקראה בתוך [ANSWER] ואת התוכן המלא לשמירה/שליחה בתוך [CONTENT].
 [ANSWER] הטקסט להקראה באוזן [/ANSWER]
-[TITLE] כותרת עד 4 מילים [/TITLE]
-[CONTENT] הקוד המלא או התוכן לשמירה [/CONTENT]`;
+[TITLE] כותרת קצרה [/TITLE]
+[CONTENT] התוכן המלא שיישמר או יישלח [/CONTENT]`;
 
             const projRes = await generateWithRetry([{text: projectPrompt}], 'text');
             const rawOutput = projRes.response.text();
@@ -300,7 +340,7 @@ async function callHandler(call) {
             const contentMatch = rawOutput.match(/\[CONTENT\]([\s\S]*?)\[\/CONTENT\]/i);
 
             if (ansMatch) replyText = sanitizeForYemot(ansMatch[1]);
-            else replyText = "הפרויקט מוכן וממתין בדאשבורד.";
+            else replyText = "התוכן מוכן וממתין בדאשבורד.";
 
             if (titleMatch && contentMatch) {
                 let cleanContent = contentMatch[1].trim().replace(/^\x60\x60\x60[a-z]*\n?/i, '').replace(/\n?\x60\x60\x60$/i, '').trim();
@@ -310,25 +350,24 @@ async function callHandler(call) {
                 void persistProject(newProject);
                 addSystemLog(`פרויקט עשיר נוצר עבור ${callerPhone}`, 'success');
 
-                if (turnResult.sendEmailTo) {
+                if (targetEmail) {
                     if (process.env.EMAIL_USER) {
                         try {
                             const mailOptions = {
                                 from: process.env.EMAIL_USER,
-                                to: turnResult.sendEmailTo,
+                                to: targetEmail,
                                 subject: `ימות המשיח AI - ${title}`,
                                 html: `<div dir="rtl" style="font-family:sans-serif;"><h2>${title}</h2><hr/><pre style="white-space: pre-wrap; font-family:inherit;">${cleanContent}</pre></div>`
                             };
                             await transporter.sendMail(mailOptions);
-                            replyText += " והתוכן נשלח לכתובת המייל שביקשת.";
-                            addSystemLog(`נשלח מייל לכתובת ${turnResult.sendEmailTo} בהצלחה!`, 'success');
+                            replyText += " והתוכן נשלח בהצלחה לכתובת שביקשת.";
+                            addSystemLog(`נשלח מייל לכתובת ${targetEmail} בהצלחה!`, 'success');
                         } catch(e) {
                             replyText += " המערכת ניסתה לשלוח אימייל אך נתקלה בתקלה טכנית.";
                             addSystemLog(`שגיאה בשליחת מייל: ${e.message}`, 'error');
                         }
                     } else {
                         replyText += " אך מערכת האימיילים טרם הוגדרה בשרת.";
-                        addSystemLog(`בקשת אימייל נדחתה - חסר משתנה סביבה EMAIL_USER`, 'error');
                     }
                 }
             }
@@ -369,7 +408,7 @@ app.post('/api/simulate', async (req, res) => {
   
   try {
     const history = getCompressedHistory(callerPhone, 3);
-    const prompt = `${getExclusiveInstruction()}\nהקשר קודם:\n${history}\n\nהודעה טקסטואלית חדשה. החזר אך ורק JSON תקני:\n{"transcript":"${text}","answer":"תשובה קצרה","needsWebSearch":false,"wantsProject":false,"sendEmailTo":null}\nwantsProject=true לבקשת קוד/אתר/מאמר. needsWebSearch=true למידע עדכני. sendEmailTo="כתובת אימייל" - רק אם המשתמש הזכיר במפורש לאיזו כתובת לשלוח. אחרת השאר null.`;
+    const prompt = `${getExclusiveInstruction()}\n\nהקשר קודם:\n${history}\n\nהודעה טקסטואלית חדשה. \n${BASE_JSON_PROMPT}`;
     
     const result = await generateWithRetry([{text:prompt}], 'json');
     const parsed = extractJsonSafely(result.response.text());
@@ -378,8 +417,11 @@ app.post('/api/simulate', async (req, res) => {
     let replyText = parsed.answer || '';
     let transcript = text;
     
-    if (parsed.wantsProject || parsed.sendEmailTo) {
-        const projectPrompt = `${getExclusiveInstruction()}\nהמשתמש מבקש: "${transcript}"\nאם המשתמש ביקש לכתוב מאמר או טקסט, כתוב אותו בתוך [ANSWER] כדי שיוקרא, וגם בתוך [CONTENT] לשמירה. אם ביקש קוד, שים קוד רק ב-[CONTENT].\n[ANSWER] הטקסט [/ANSWER]\n[TITLE] כותרת [/TITLE]\n[CONTENT] התוכן [/CONTENT]`;
+    let targetEmail = parsed.sendEmailTo;
+    if (targetEmail && targetEmail.toUpperCase() === 'DEFAULT') targetEmail = process.env.EMAIL_USER;
+
+    if (parsed.wantsProject || targetEmail) {
+        const projectPrompt = `${getExclusiveInstruction()}\nהמשתמש מבקש: "${transcript}"\nהנחיות ברזל: המערכת שולחת אימיילים אוטומטית! לעולם אל תגיד שאין לך אפשרות כזו. כתוב את התוכן בלבד.\n[ANSWER] הטקסט להקראה [/ANSWER]\n[TITLE] כותרת [/TITLE]\n[CONTENT] התוכן שיישלח [/CONTENT]`;
         const projRes = await generateWithRetry([{text: projectPrompt}], 'text');
         const rawOutput = projRes.response.text();
         
@@ -388,7 +430,7 @@ app.post('/api/simulate', async (req, res) => {
         const contentMatch = rawOutput.match(/\[CONTENT\]([\s\S]*?)\[\/CONTENT\]/i);
 
         if (ansMatch) replyText = ansMatch[1].trim();
-        else replyText = "הפרויקט מוכן וממתין בדאשבורד.";
+        else replyText = "התוכן מוכן וממתין בדאשבורד.";
 
         if (titleMatch && contentMatch) {
             let cleanContent = contentMatch[1].trim().replace(/^\x60\x60\x60[a-z]*\n?/i, '').replace(/\n?\x60\x60\x60$/i, '').trim();
@@ -398,17 +440,15 @@ app.post('/api/simulate', async (req, res) => {
             void persistProject(newProject);
             addSystemLog(`פרויקט עשיר נוצר מהסימולטור`, 'success');
 
-            if (parsed.sendEmailTo && process.env.EMAIL_USER) {
+            if (targetEmail && process.env.EMAIL_USER) {
                 try {
-                    await transporter.sendMail({ from: process.env.EMAIL_USER, to: parsed.sendEmailTo, subject: `ימות המשיח AI - ${title}`, html: `<div dir="rtl"><h2>${title}</h2><hr/><pre>${cleanContent}</pre></div>` });
+                    await transporter.sendMail({ from: process.env.EMAIL_USER, to: targetEmail, subject: `ימות המשיח AI - ${title}`, html: `<div dir="rtl"><h2>${title}</h2><hr/><pre>${cleanContent}</pre></div>` });
                     replyText += " והתוכן נשלח לכתובת המייל שביקשת.";
-                    addSystemLog(`נשלח מייל לכתובת ${parsed.sendEmailTo} בהצלחה!`, 'success');
+                    addSystemLog(`נשלח מייל לכתובת ${targetEmail} בהצלחה!`, 'success');
                 } catch(e) {
                     replyText += " אירעה שגיאה טכנית בשליחת האימייל.";
                     addSystemLog(`שגיאה בשליחת מייל: ${e.message}`, 'error');
                 }
-            } else if (parsed.sendEmailTo) {
-                 addSystemLog(`בקשת אימייל נדחתה - חסר משתנה סביבה EMAIL_USER`, 'error');
             }
         }
     } else if (parsed.needsWebSearch) {
@@ -452,10 +492,12 @@ app.post('/api/calls/:id/kill', (req, res) => {
   callObj.killRequested = true; callObj.status = 'התבקש ניתוק'; res.json({ ok: true });
 });
 app.post('/api/settings', (req, res) => {
-  const { firstCallMessage, systemInstruction } = req.body;
+  const { firstCallMessage, systemInstruction, contactsBook } = req.body;
   if (typeof firstCallMessage === 'string') appSettings.firstCallMessage = firstCallMessage;
   if (typeof systemInstruction === 'string') appSettings.systemInstruction = systemInstruction;
-  addSystemLog('הגדרות המערכת עודכנו', 'success'); res.json({ ok: true, settings: appSettings });
+  if (typeof contactsBook === 'string') appSettings.contactsBook = contactsBook;
+  void persistSettings(); // שמירה קבועה במסד הנתונים!
+  addSystemLog('הגדרות המערכת עודכנו ונשמרו', 'success'); res.json({ ok: true, settings: appSettings });
 });
 
 app.get('/health',(req,res)=>res.json({ok:true}));
@@ -524,5 +566,5 @@ process.on('uncaughtException',(err)=>{if(!(err instanceof ExitError)) logDetail
 const port=process.env.PORT||3000;
 app.listen(port,async()=>{
   console.log('server running on port '+port); addSystemLog('השרת עלה בהצלחה על פורט ' + port, 'success');
-  await loadConversationLog(); await loadRemindersFromSupabase(); await loadProjectsFromSupabase(); await configureYemotStructure();
+  await loadSettingsFromSupabase(); await loadConversationLog(); await loadRemindersFromSupabase(); await loadProjectsFromSupabase(); await configureYemotStructure();
 });

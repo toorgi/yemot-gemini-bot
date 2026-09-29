@@ -32,7 +32,7 @@
                 <i class="fa-solid fa-chart-pie w-5"></i> לוח בקרה
             </button>
             <button onclick="switchTab('simulator')" id="btn-simulator" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 text-slate-300 transition-colors">
-                <i class="fa-solid fa-laptop-code w-5 text-emerald-400"></i> סימולטור צ'אט (חדש)
+                <i class="fa-solid fa-laptop-code w-5 text-emerald-400"></i> סימולטור צ'אט
             </button>
             <button onclick="switchTab('history')" id="btn-history" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 text-slate-300 transition-colors">
                 <i class="fa-solid fa-comments w-5"></i> היסטוריית שיחות
@@ -91,7 +91,7 @@
             </div>
         </section>
 
-        <!-- סימולטור צ'אט אינטרנטי (חדש!) -->
+        <!-- סימולטור צ'אט -->
         <section id="tab-simulator" class="tab-content">
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 h-[75vh] flex flex-col overflow-hidden max-w-4xl mx-auto">
                 <div class="px-6 py-4 border-b border-slate-100 bg-emerald-50 flex justify-between items-center">
@@ -193,8 +193,23 @@
                     </div>
                     <div>
                         <label class="block font-bold text-slate-800 mb-2">הוראות מערכת פעילות (System Instructions)</label>
-                        <textarea id="set-system" rows="6" class="w-full border border-slate-300 rounded-lg p-4 font-mono text-sm shadow-inner"></textarea>
+                        <textarea id="set-system" rows="5" class="w-full border border-slate-300 rounded-lg p-4 font-mono text-sm shadow-inner"></textarea>
                     </div>
+                    
+                    <!-- אזור ייבוא קבצי CSV חכם -->
+                    <div class="bg-slate-50 border border-slate-200 p-4 rounded-xl">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2 gap-3">
+                            <label class="block font-bold text-slate-800"><i class="fa-solid fa-address-book text-emerald-500 mr-1"></i> ספר אנשי קשר (למשלוח אימיילים)</label>
+                            <!-- כפתור הייבוא -->
+                            <label for="csv-upload" class="cursor-pointer text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm font-bold flex items-center gap-2">
+                                <i class="fa-solid fa-file-import"></i> ייבא קובץ Google Contacts
+                            </label>
+                            <input type="file" id="csv-upload" accept=".csv" class="hidden" onchange="handleCSVUpload(event)">
+                        </div>
+                        <p class="text-xs text-slate-500 mb-3">כתוב כאן בשפה פשוטה (למשל: חנה = chana@gmail.com), או לחץ על הכפתור הירוק כדי לטעון קובץ CSV שהורדת מגוגל ותן למערכת לחלץ את השמות והמיילים לבד!</p>
+                        <textarea id="set-contacts" rows="6" class="w-full border border-slate-300 rounded-lg p-4 font-mono text-sm shadow-inner" placeholder="אבא = edan@example.com&#10;חנה אשתי = chana@gmail.com"></textarea>
+                    </div>
+
                     <div>
                         <label class="block font-bold text-slate-800 mb-2">הודעת פתיח ראשונית</label>
                         <input type="text" id="set-first" class="w-full border border-slate-300 rounded-lg p-3 shadow-inner">
@@ -273,7 +288,6 @@
             }
         }
 
-        // פונקציית שליחה מהסימולטור 
         async function sendSimMessage() {
             const input = document.getElementById('sim-input');
             const text = input.value.trim();
@@ -298,7 +312,7 @@
                 
                 chatWin.innerHTML += `<div class="flex justify-end mb-4"><div class="msg-bubble msg-ai p-3 shadow-sm border border-slate-200 text-sm text-slate-800">${data.reply || 'שגיאה'}</div></div>`;
                 chatWin.scrollTop = chatWin.scrollHeight;
-                fetchData(); // מרענן כדי להראות את הפרויקט במידה ונוצר
+                fetchData(); 
             } catch(e) {
                 document.getElementById(typingId).remove();
                 showToast('שגיאה בתקשורת עם השרת', 'error');
@@ -425,13 +439,111 @@
         }
 
         async function deleteReminder(id) { try { const res = await fetch(`/api/reminders/${id}`, { method: 'DELETE' }); if(res.ok) { fetchData(); showToast('התזכורת נמחקה.'); } } catch(e) {} }
-        async function loadSettings() { try { const res = await fetch('/api/settings'); if(res.ok) { const data = await res.json(); document.getElementById('set-system').value = data.systemInstruction || ''; document.getElementById('set-first').value = data.firstCallMessage || ''; } } catch(e) {} }
+        
+        async function loadSettings() { 
+            try { 
+                const res = await fetch('/api/settings'); 
+                if(res.ok) { 
+                    const data = await res.json(); 
+                    document.getElementById('set-system').value = data.systemInstruction || ''; 
+                    document.getElementById('set-first').value = data.firstCallMessage || ''; 
+                    document.getElementById('set-contacts').value = data.contactsBook || ''; 
+                } 
+            } catch(e) {} 
+        }
 
         document.getElementById('settings-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const payload = { systemInstruction: document.getElementById('set-system').value, firstCallMessage: document.getElementById('set-first').value };
-            try { const res = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); if(res.ok) showToast('ההגדרות נשמרו ויחולו על השיחה הבאה!'); } catch(e) {}
+            const payload = { 
+                systemInstruction: document.getElementById('set-system').value, 
+                firstCallMessage: document.getElementById('set-first').value,
+                contactsBook: document.getElementById('set-contacts').value
+            };
+            try { 
+                const res = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); 
+                if(res.ok) showToast('ההגדרות (כולל אנשי הקשר) נשמרו בהצלחה!'); 
+            } catch(e) {}
         });
+
+        // ==========================================
+        // מנוע קריאת קובץ CSV חכם מתוך Google Contacts
+        // ==========================================
+        function handleCSVUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                const lines = text.split(/\r?\n/);
+                if (lines.length < 1) return;
+                
+                const headers = parseCSVLine(lines[0]);
+                const fnIdx = headers.findIndex(h => h.trim() === 'First Name');
+                const lnIdx = headers.findIndex(h => h.trim() === 'Last Name');
+                const emailIdx = headers.findIndex(h => h.trim() === 'E-mail 1 - Value');
+                
+                if (emailIdx === -1) {
+                    showToast('שגיאה: לא נמצאה עמודת אימיילים (E-mail 1 - Value) בקובץ', 'error');
+                    return;
+                }
+                
+                let addedCount = 0;
+                let currentText = document.getElementById('set-contacts').value.trim();
+                let newContacts = [];
+                
+                for(let i = 1; i < lines.length; i++) {
+                    if (!lines[i].trim()) continue;
+                    const cols = parseCSVLine(lines[i]);
+                    
+                    if (cols.length > emailIdx) {
+                        const email = cols[emailIdx].trim();
+                        const fName = fnIdx !== -1 && cols[fnIdx] ? cols[fnIdx].trim() : '';
+                        const lName = lnIdx !== -1 && cols[lnIdx] ? cols[lnIdx].trim() : '';
+                        
+                        if (email && email.includes('@')) {
+                            const fullName = (fName + ' ' + lName).trim();
+                            if (fullName) {
+                                newContacts.push(`${fullName} = ${email}`);
+                                addedCount++;
+                            }
+                        }
+                    }
+                }
+                
+                if (addedCount > 0) {
+                    const finalList = currentText ? (currentText + '\n' + newContacts.join('\n')) : newContacts.join('\n');
+                    document.getElementById('set-contacts').value = finalList;
+                    showToast(`מעולה! ${addedCount} אנשי קשר יובאו בהצלחה. אל תשכח ללחוץ על 'שמור הגדרות' למטה!`, 'success');
+                } else {
+                    showToast('לא נמצאו אימיילים תקינים בקובץ.', 'error');
+                }
+                event.target.value = ''; // איפוס הקלט
+            };
+            reader.readAsText(file);
+        }
+
+        // פונקציה חכמה לפיצול שורות CSV שמתמודדת עם פסיקים בתוך מירכאות
+        function parseCSVLine(text) {
+            let ret = [];
+            let inQuote = false;
+            let value = '';
+            for (let i = 0; i < text.length; i++) {
+                let char = text[i];
+                if (inQuote) {
+                    if (char === '"') {
+                        if (i < text.length - 1 && text[i + 1] === '"') { value += '"'; i++; }
+                        else inQuote = false;
+                    } else value += char;
+                } else {
+                    if (char === '"') inQuote = true;
+                    else if (char === ',') { ret.push(value); value = ''; }
+                    else value += char;
+                }
+            }
+            ret.push(value);
+            return ret;
+        }
 
         loadSettings(); fetchData(); setInterval(fetchData, 3000);
     </script>
